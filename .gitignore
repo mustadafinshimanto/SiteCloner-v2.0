@@ -1,0 +1,32 @@
+# Node dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Output directory (where clones are stored)
+output/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Large media assets
+*.tmp
+*.zip
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+!public/assets/*
