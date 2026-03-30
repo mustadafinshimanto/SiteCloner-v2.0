@@ -1,0 +1,30 @@
+{
+  "name": "sitecloner",
+  "version": "1.0.0",
+  "description": "Premium website cloning tool — extract front-end files, animations, transitions, and design with zero visual loss",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "website",
+    "cloner",
+    "scraper",
+    "puppeteer",
+    "css",
+    "animations"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.3.1",
+    "express": "^4.21.0",
+    "mime-types": "^2.1.35",
+    "puppeteer": "^23.5.0",
+    "uuid": "^10.0.0"
+  }
+}
