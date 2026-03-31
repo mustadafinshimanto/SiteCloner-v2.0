@@ -27,6 +27,7 @@
   const previewIframe = document.getElementById('preview-iframe');
   const previewUrl = document.getElementById('preview-url');
   const previewClose = document.getElementById('preview-close');
+  const previewLaunchBtn = document.getElementById('preview-launch-btn');
   const historyList = document.getElementById('history-list');
   const historyEmpty = document.getElementById('history-empty');
   const clearBtn = document.getElementById('clear-history-btn');
@@ -271,6 +272,11 @@
     previewUrl.textContent = urlInput.value;
     previewIframe.src = `/api/preview/${currentJobId}/index.html`;
     previewSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  previewLaunchBtn.addEventListener('click', () => {
+    if (!currentJobId) return;
+    window.open(`/api/preview/${currentJobId}/index.html`, '_blank');
   });
 
   previewClose.addEventListener('click', () => {

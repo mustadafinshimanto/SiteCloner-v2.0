@@ -199,6 +199,8 @@ export class SiteCloner extends EventEmitter {
         const animCSS = cssExtractor.generateAnimationsCSS();
         packager.writeAnimationsCSS(animCSS);
         packager.writeLaunchBat();
+        // V9: Setup the Preview Shield Service Worker
+        packager.setupPreviewShield();
         // Rewrite CSS files for global assets
         packager.rewriteCSSFiles(urlRewriter);
       }

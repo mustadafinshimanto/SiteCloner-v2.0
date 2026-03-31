@@ -25,6 +25,18 @@ export class Packager {
       finalHtml = `<!DOCTYPE html>\n<html>${html}</html>`;
     }
 
+    // V9: Infinite Fidelity Preview Injection
+    const swRegistration = `
+    <script id="v9-preview-shield">
+      if ('serviceWorker' in navigator && window.location.pathname.includes('/api/preview/')) {
+        navigator.serviceWorker.register('preview-sw.js', { scope: './' })
+          .then(reg => console.log('[V9] Preview Shield Active:', reg.scope))
+          .catch(err => console.warn('[V9] Preview Shield Failed:', err));
+      }
+    </script>
+    `;
+    finalHtml = finalHtml.replace('</head>', `${swRegistration}</head>`);
+
     fs.writeFileSync(htmlPath, finalHtml, 'utf-8');
     return htmlPath;
   }
@@ -184,5 +196,25 @@ export class Packager {
     const content = `@echo off\ncls\necho.\necho   -------------------------------------------------\necho      S I T E C L O N E R   P R E V I E W\necho   -------------------------------------------------\necho.\necho Launching cloned website in your default browser...\necho.\nstart "" "index.html"\necho.\necho Done. You can close this window now.\ntimeout /t 3 > nul\n`;
     fs.writeFileSync(batPath, content, 'utf-8');
     return batPath;
+  }
+
+  /**
+   * Copy the V9 Preview Shield (Service Worker) to the output directory.
+   */
+  setupPreviewShield() {
+    try {
+      const swFileName = 'preview-sw.js';
+      const sourcePath = path.join(process.cwd(), 'public', swFileName);
+      const destPath = path.join(this.outputDir, swFileName);
+      
+      if (fs.existsSync(sourcePath)) {
+        fs.copyFileSync(sourcePath, destPath);
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('Failed to setup V9 Preview Shield:', err);
+      return false;
+    }
   }
 }

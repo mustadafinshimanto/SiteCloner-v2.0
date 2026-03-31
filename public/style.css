@@ -877,15 +877,27 @@ body {
   white-space: nowrap;
 }
 
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.toolbar-launch,
 .toolbar-close {
   background: none;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 4px;
+  padding: 6px;
   border-radius: var(--radius-sm);
   display: flex;
   transition: all var(--transition-fast);
+}
+
+.toolbar-launch:hover {
+  background: rgba(167, 139, 250, 0.1);
+  color: var(--text-accent);
 }
 
 .toolbar-close:hover {
@@ -898,6 +910,26 @@ body {
   height: 600px;
   border: none;
   background: #fff;
+}
+
+.preview-tip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 10px 16px;
+  background: rgba(6, 182, 212, 0.08);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.tip-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.preview-tip strong {
+  color: var(--color-info);
 }
 
 /* ===== History Section ===== */

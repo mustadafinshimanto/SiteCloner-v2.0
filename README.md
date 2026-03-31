@@ -1,62 +1,52 @@
-# ⚡ SiteCloner — High-Fidelity Website Cloning Engine
-### Developed by **mustadafinshimanto**
+# 🚀 SiteCloner v1.5 [V9 Infinite Fidelity]
+### *The Ultimate AI-Native Website Archival Engine*
 
-SiteCloner is a premium, AI-powered tool architected by **mustadafinshimanto** for developers and designers who need **high-fidelity clones** of modern websites. While achieving 100% pixel-perfection on framework-heavy sites is an industry-wide challenge, the SiteCloner engine uses a next-gen headless system and AI vision to achieve **70-80% visual and functional fidelity out of the box.**
-
-![SiteCloner Banner](https://img.shields.io/badge/Status-Premium-brightgreen)
-![SiteCloner Banner](https://img.shields.io/badge/AI-Active_Fidelity_Healing-blue)
-![SiteCloner Banner](https://img.shields.io/badge/Architect-mustadafinshimanto-orange)
-
-## 🚀 Key Features
-
-*   **Fidelity Healing Engine**: Architected to bridge the gap from 70% to 100% by identifying and patching visual regressions using **Gemini 2.5 Vision**.
-*   **Intelligent UI Cleanup**: Automatically removes blocking, broken elements like Disclaimer banners and Cookie modals using the **V6 Ultra** "Janitor" logic.
-*   **Auto-Scroll Discovery**: Dramatically improves image capture by simulating user interaction to trigger lazy-loaded assets before serialization.
-*   **Deep CSS Extraction**: Aggressively captures keyframes and font-faces, optimized for modern framework-heavy sites.
-*   **Quick Preview**: Generates a local `run.bat` for every clone for one-click launching.
-
-## 🛠️ Tech Stack
-
-*   **Architected by**: mustadafinshimanto
-*   **Engine**: Puppeteer (Headless Chrome)
-*   **Backend**: Node.js / Express
-*   **Intelligence**: Google Gemini 2.5 & DeepSeek V3
-*   **Frontend**: Professional Glassmorphic Dashboard
-
-## 🤖 What the AI Does (V6 Ultra Engine)
-
-SiteCloner isn't just a blind downloader—it's an **AI-powered architect** that "heals" the website after capture. The integrated Gemini/DeepSeek engine performs the following mission-critical tasks:
-
-*   **Holographic Vision Comparison**: The AI captures a screenshot of both the original site and your clone. It performs a **pixel-by-pixel delta analysis** to identify missing images, shifted layouts, or broken typography that the standard cloner missed.
-*   **The "Janitor" Protocol**: Modern sites often use disclaimers, cookie banners, or "I Agree" modals that block the page. Since their JavaScript often breaks in a static clone, the AI **surgically deletes** these blocking elements to ensure a clean, professional landing page.
-*   **Fidelity Healing**: It scans the cloned code for broken asset paths (like Windows backslashes `\` or missing base URLs) and generates real-time patches to fix them.
-*   **Deep CSS Awareness**: The AI analyzes up to **25 separate CSS files** simultaneously to find and restore missing global variables (`--primary-color`, etc.) and animation keyframes.
-*   **Self-Healing Data Bridge**: It monitors its own output to ensure all patches are valid JSON, preventing crashes even when handling complex, framework-heavy code.
-
-## 🔧 Installation
-
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/mustadafinshimanto/SiteCloner-v1.5.git
-    cd SiteCloner
-    ```
-2.  Install dependencies:
-    ```bash
-    npm install
-    ```
-3.  Configure your **`.env`** file:
-    -   Copy the template: `cp .env.example .env`
-    -   Add your **Gemini API Key** to the newly created `.env` file!
-    ```env
-    AI_PROVIDER=gemini
-    GEMINI_API_KEY=your_key_here
-    GEMINI_MODEL=gemini-2.5-flash
-    ```
-4.  Launch the app:
-    ```bash
-    run-sitecloner.bat
-    ```
+**Built & Engineered by:** [**mustadafinshimanto**](https://github.com/mustadafinshimanto)  
+*Lead Architect, Full-Stack Developer & AI Visionary*
 
 ---
-Built with ⚡ by **mustadafinshimanto**  
-*Lead Developer & Architect of the SiteCloner Engine*
+
+## 💎 The V9 "Absolute Power" Evolution
+
+SiteCloner v1.5 is a professional-grade archival suite designed to capture, reconstruct, and preserve modern websites with extreme precision. Moving beyond simple HTML copying, the **V9 Infinite Fidelity** engine uses advanced headless browser automation and AI-driven "healing" to produce pixel-perfect clones.
+
+### 🌟 Key Architectural Upgrades
+
+#### 🛡️ V9: Infinite Fidelity Preview (NEW)
+- **Preview Shield (Service Worker)**: A dedicated interception layer that forces browsers to resolve every asset correctly, re-routing absolute paths (like Next.js/React statics) to local archives.
+- **Absolute Launch (New Tab)**: Bypasses `X-Frame-Options` and secure frame-blocking headers, allowing you to view clones in a dedicated, 100% stable environment.
+
+#### 🌊 V8: Deep Crawl "Absolute Power"
+- **Recursive Scraper**: Discovers and archives entire website structures by following internal same-origin links automatically.
+- **Holographic Navigation**: Intelligently remaps internal links to local `.html` files for seamless offline browsing.
+
+#### 🌈 V7: Holographic Style Injection
+- **Style Baking**: Captures live computed states, CSS variables, and keyframe animations, injecting them directly into the final archive for visual identity parity.
+- **Shadow DOM Recursion**: Deep-scans and extracts styles hidden within Shadow Roots.
+
+---
+
+## ⚠️ Important Accuracy Disclaimer
+
+> [!WARNING]  
+> **The 70-80% Reality**: While SiteCloner v1.5 [V9] is one of the most powerful archival tools ever built, modern web complexity is infinite. On extremely complex, high-security, or heavily server-side dependent (SSR) sites, the AI-Native engine typically achieves **70% to 80% visual and functional accuracy**. 
+>
+> Some dynamic components, server-side data fetches, and protected API endpoints cannot be captured in a static clone. For the highest fidelity experience, always use the **Absolute Launch** feature or the **`run.bat`** file provided in every export.
+
+---
+
+## 🛠️ Performance Features
+- **AI-Native Healing**: Uses Gemini 1.5 Flash to surgically repair layout shifts and broken paths.
+- **Network Interception**: Catches and categorizes every asset by MIME type (CSS, JS, Fonts, Images, Audio, Video).
+- **HolographicVision Delayer**: Performs pixel-by-pixel comparative analysis to force visual identity.
+- **Project Janitor Protocol**: Automatically removes blocking elements like cookie banners and disclaimer popups.
+
+## 🚀 Quick Start
+1. Clone the repository.
+2. Create a `.env` file with your `GEMINI_API_KEY`.
+3. Run `npm install` and `npm start`.
+4. Enter any URL and activate **"Full Website"** for a deep archival.
+
+---
+
+**⚠️ Legal Disclaimer:** This tool is intended for personal learning, authorized security testing, and educational archival purposes. The architect and developers are not responsible for any misuse. Always respect copyright and website Terms of Service.

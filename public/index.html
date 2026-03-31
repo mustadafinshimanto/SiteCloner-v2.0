@@ -291,14 +291,25 @@
             <span class="dot dot-green"></span>
           </div>
           <span class="preview-url" id="preview-url">Preview</span>
-          <button class="toolbar-close" id="preview-close" title="Close preview">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
+          <div class="toolbar-actions">
+            <button class="toolbar-launch" id="preview-launch-btn" title="Absolute Launch (New Tab)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/>
+              </svg>
+            </button>
+            <button class="toolbar-close" id="preview-close" title="Close preview">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
         </div>
-        <iframe id="preview-iframe" class="preview-iframe" sandbox="allow-scripts allow-same-origin"></iframe>
+        <div id="preview-tip" class="preview-tip">
+          <span class="tip-icon">💡</span>
+          <span class="tip-text">High complexity clone? Use <strong>Absolute Launch</strong> (New Tab) for 100% fidelity.</span>
+        </div>
+        <iframe id="preview-iframe" class="preview-iframe" sandbox="allow-scripts allow-forms allow-same-origin"></iframe>
       </div>
     </section>
 
