@@ -34,7 +34,15 @@ SiteCloner is a premium, AI-powered tool architected by **mustadafinshimanto** f
     ```bash
     npm install
     ```
-3.  Launch the app:
+3.  Configure your **`.env`** file:
+    -   Copy the template: `cp .env.example .env`
+    -   Add your **Gemini API Key** to the newly created `.env` file!
+    ```env
+    AI_PROVIDER=gemini
+    GEMINI_API_KEY=your_key_here
+    GEMINI_MODEL=gemini-2.5-flash
+    ```
+4.  Launch the app:
     ```bash
     run-sitecloner.bat
     ```
