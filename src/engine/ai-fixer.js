@@ -261,7 +261,7 @@ ${JSON.stringify(patchInput, null, 2)}
 `;
 
     const versions = ['v1', 'v1beta'];
-    const names = ['gemini-2.5-flash', 'gemini-2.5-flash-latest', 'gemini-1.5-flash'];
+    const names = [this.model, 'gemini-1.5-flash', 'gemini-1.5-flash-latest'];
     let lastErr = '';
 
     for (const v of versions) {
