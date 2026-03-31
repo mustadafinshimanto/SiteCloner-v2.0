@@ -5,8 +5,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# Output directory (where clones are stored)
+# Output and clones directory (where captures are stored)
 output/
+clones/
 
 # Environment variables
 .env
