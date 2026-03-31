@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title SiteCloner v2.0 — Premium Website Extraction Engine
+title SiteCloner v2.0 — Premium Website Cloning Engine
 
 REM --- Setup colors (Standard Windows CMD ANSI support) ---
 cls

@@ -1,7 +1,7 @@
 {
   "name": "sitecloner",
   "version": "2.0.0",
-  "description": "Premium website cloning tool — extract front-end files, animations, transitions, and design with zero visual loss",
+  "description": "Premium website cloning engine — extract front-end files, animations, transitions, and design with zero visual loss",
   "main": "server.js",
   "type": "module",
   "scripts": {

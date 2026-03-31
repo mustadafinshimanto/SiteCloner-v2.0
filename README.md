@@ -1,5 +1,5 @@
 # 🚀 SiteCloner v2.0 [Ultimate Neural Suite]
-### *The Ultimate AI-Native Website Archival Engine*
+### *The Ultimate AI-Native Website Cloning Engine*
 
 <p align="center">
   <img src="https://img.shields.io/badge/Version-2.0.0-a78bfa?style=for-the-badge" alt="Version" />
@@ -20,7 +20,7 @@
 *Visionary Engineer | AI-Native Developer | Lead Architect*
 
 > [!IMPORTANT]
-> **Built with Vibe Coding in the Antigravity IDE**: SiteCloner v2.0 is a product of absolute synergy between human vision and AI-native engineering. The entire archival engine and dashboard were architected, optimized, and finalized through **100% Vibe Coding within the Antigravity IDE**—representing the future of high-performance software craft.
+> **Built with Vibe Coding in the Antigravity IDE**: SiteCloner v2.0 is a product of absolute synergy between human vision and AI-native engineering. The entire cloning engine and dashboard were architected, optimized, and finalized through **100% Vibe Coding within the Antigravity IDE**—representing the future of high-performance software craft.
 
 ---
 
