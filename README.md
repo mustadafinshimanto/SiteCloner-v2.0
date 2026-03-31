@@ -6,6 +6,7 @@
   <img src="https://img.shields.io/badge/Powered_By-Gemini_Flash-06b6d4?style=for-the-badge" alt="AI Powered" />
   <img src="https://img.shields.io/badge/Architecture-Absolute_Power-34d399?style=for-the-badge" alt="Architecture" />
   <img src="https://img.shields.io/badge/Lead_Architect-mustadafinshimanto-fbbf24?style=for-the-badge" alt="Architect" />
+  <img src="https://img.shields.io/badge/Vibe_Coding-Absolute_Power-ff00ff?style=for-the-badge" alt="Vibe Coded" />
 </p>
 
 ---
@@ -17,6 +18,9 @@
 ### 🏛️ Lead Architect & Developer
 **[mustadafinshimanto](https://github.com/mustadafinshimanto)**  
 *Visionary Engineer | AI-Native Developer | Lead Architect*
+
+> [!IMPORTANT]
+> **Built with Vibe Coding in the Antigravity IDE**: SiteCloner v2.0 is a product of absolute synergy between human vision and AI-native engineering. The entire archival engine and dashboard were architected, optimized, and finalized through **100% Vibe Coding within the Antigravity IDE**—representing the future of high-performance software craft.
 
 ---
 
