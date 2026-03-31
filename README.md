@@ -1,8 +1,8 @@
-# 🚀 SiteCloner v2.0 [Ultimate Neural Suite]
+# 🚀 SiteCloner v3.1 [Cinematic Mastery Edition]
 ### *The Ultimate AI-Native Website Cloning Engine*
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-2.0.0-a78bfa?style=for-the-badge" alt="Version" />
+  <img src="https://img.shields.io/badge/Version-3.1.0-a78bfa?style=for-the-badge" alt="Version" />
   <img src="https://img.shields.io/badge/Powered_By-Gemini_Flash-06b6d4?style=for-the-badge" alt="AI Powered" />
   <img src="https://img.shields.io/badge/Architecture-Absolute_Power-34d399?style=for-the-badge" alt="Architecture" />
   <img src="https://img.shields.io/badge/Lead_Architect-mustadafinshimanto-fbbf24?style=for-the-badge" alt="Architect" />
@@ -11,27 +11,28 @@
 
 ---
 
-## 💎 The V10 "Absolute Fidelity" Vision
+## 💎 The V12 "Cinematic Mastery" Vision
 
-**SiteCloner v2.0** is a professional-grade archival suite architected to capture, reconstruct, and preserve modern websites with zero-loss precision. Moving beyond standard static scraping, the **V10 Guardian Bypass** engine leverages advanced headless browser automation and AI-driven neural healing to produce high-fidelity clones of even the most complex web infrastructures.
+**SiteCloner v3.1** is a professional-grade archival suite architected to capture, reconstruct, and preserve modern websites with zero-loss precision. Moving beyond standard static scraping, the **Cinematic Overdrive** engine leverages advanced headless browser automation and AI-driven neural healing to produce high-fidelity clones of even the most complex web infrastructures—including 100% accurate background video archival.
 
 ### 🏛️ Lead Architect & Developer
 **[mustadafinshimanto](https://github.com/mustadafinshimanto)**  
 *Visionary Engineer | AI-Native Developer | Lead Architect*
 
 > [!IMPORTANT]
-> **Built with Vibe Coding in the Antigravity IDE**: SiteCloner v2.0 is a product of absolute synergy between human vision and AI-native engineering. The entire cloning engine and dashboard were architected, optimized, and finalized through **100% Vibe Coding within the Antigravity IDE**—representing the future of high-performance software craft.
+> **Built with Vibe Coding in the Antigravity IDE**: SiteCloner v3.1 is a product of absolute synergy between human vision and AI-native engineering. The entire cloning engine and dashboard were architected, optimized, and finalized through **100% Vibe Coding within the Antigravity IDE**—representing the future of high-performance software craft.
 
 ---
 
-## ⚡ The V10 "Absolute Power" Matrix
+## ⚡ The Cinematic Mastery Matrix
 
 | Generation | Breakthrough | Capability |
 | :--- | :--- | :--- |
+| **V12** | **Neural ZIP Restore** | Absolute download integrity with high-fidelity MIME headers and resilient .zip archival. |
+| **V11** | **Cinematic Overdrive** | Neural Media Heartbeat (Force-Play) and Resilient Media Interception for 100% background video capture. |
 | **V10** | **Guardian Bypass** | Automated surgical extraction of reCAPTCHA, hCaptcha, and Cloudflare Turnstile verification blocks. |
 | **V9** | **Infinite Preview** | Service Worker "Preview Shield" for 100% asset resolution and **Absolute Launch** iframe bypass. |
 | **V8** | **Deep Crawl** | Recursive discovery and archival of entire multi-page domain structures with internal link remapping. |
-| **V7** | **Holographic Styling** | "Baking" of live computed states, CSS variables, and Shadow DOM styles directly into the archive. |
 
 ---
 

@@ -42,21 +42,12 @@ echo [SYSTEM] Environment loaded from .env...
 
 REM --- AI Diagnostics ---
 set "AI_STATUS=DISABLED"
-if defined AI_PROVIDER (
-  if "!AI_PROVIDER!"=="deepseek" (
-    if defined DEEPSEEK_API_KEY (
-      set "AI_STATUS=ENABLED (DeepSeek V3)"
-    )
-  )
-  if "!AI_PROVIDER!"=="gemini" (
-    if defined GEMINI_API_KEY (
-      set "AI_STATUS=ENABLED (Gemini 1.5 Flash - Neural v2.0)"
-    )
-  )
+if defined GEMINI_API_KEY (
+  set "AI_STATUS=ENABLED (Gemini 1.5 Flash - Neural v2.0)"
 )
 
 echo [AI] Status: %AI_STATUS%
-echo [AI] Provider: !AI_PROVIDER!
+echo [AI] Engine: Google Gemini (Native)
 
 REM --- Network Diagnostics ---
 if not defined PORT (

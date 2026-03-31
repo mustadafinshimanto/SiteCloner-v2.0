@@ -46,12 +46,42 @@
   // ===== State =====
   let currentJobId = null;
   let eventSource = null;
+  let isCloneFinished = false;
+
+  // ===== Initialization & Recovery (v2.13) =====
+  function init() {
+    const history = loadHistory();
+    renderHistory();
+
+    if (history.length > 0) {
+      const lastJob = history[0];
+      // If the last job was the one we just worked on or is currently running
+      if (lastJob.status === 'running') {
+        currentJobId = lastJob.id;
+        progressSection.classList.remove('hidden');
+        connectSSE(lastJob.id, lastJob.url);
+      } else if (lastJob.status === 'completed') {
+        // Auto-show the card for the most recent success if page was refreshed
+        currentJobId = lastJob.id;
+        progressSection.classList.remove('hidden');
+        if (lastJob.result) {
+          onCloneComplete(lastJob.result, lastJob.url);
+        } else {
+           // Fallback to minimal state if result is missing from history local
+           statusText.textContent = 'Clone complete!';
+           statusIndicator.classList.add('done');
+           progressBar.style.width = '100%';
+           progressPercent.textContent = '100%';
+           actionsSection.classList.remove('hidden');
+        }
+      }
+    }
+  }
+
+  // Run init
+  init();
 
   // ===== Advanced Options Toggle =====
-  optionsToggle.addEventListener('click', () => {
-    optionsToggle.classList.toggle('open');
-    optionsPanel.classList.toggle('open');
-  });
 
   // ===== Form Submission =====
   cloneForm.addEventListener('submit', async (e) => {
@@ -88,6 +118,7 @@
   async function startClone(url, options) {
     // Reset UI
     resetProgress();
+    isCloneFinished = false;
     setLoading(true);
     progressSection.classList.remove('hidden');
     actionsSection.classList.add('hidden');
@@ -150,7 +181,8 @@
     };
 
     eventSource.onerror = () => {
-      // SSE connection lost — check job status via polling
+      // SSE connection lost — check job status via polling if not finished
+      if (isCloneFinished) return;
       eventSource.close();
       pollJobStatus(jobId, url);
     };
@@ -159,11 +191,13 @@
   // ===== Poll Job Status =====
   async function pollJobStatus(jobId, url) {
     try {
+      if (isCloneFinished) return;
       const response = await fetch(`/api/job/${jobId}`);
       const job = await response.json();
 
+      if (isCloneFinished) return;
       if (job.status === 'completed') {
-        onCloneComplete(job.result, url);
+        onCloneComplete(job.result, url || urlInput.value);
       } else if (job.status === 'failed') {
         onCloneError(job.error);
       } else {
@@ -171,7 +205,9 @@
         setTimeout(() => connectSSE(jobId, url), 2000);
       }
     } catch {
-      onCloneError('Lost connection to server');
+      if (!isCloneFinished) {
+        onCloneError('Lost connection to server');
+      }
     }
   }
 
@@ -208,6 +244,15 @@
     if (data.message) {
       addLogEntry(data.phase, data.message);
     }
+
+    // V11: Proactive Sync (v2.11)
+    if (data.phase === 'done') {
+      // If result is fused, use it immediately to unlock dashboard (v2.11)
+      if (data.result) {
+        onCloneComplete(data.result, urlInput.value);
+      }
+      setTimeout(() => renderHistory(), 500);
+    }
   }
 
   // ===== Add Log Entry =====
@@ -227,9 +272,15 @@
     }
   }
 
-  // ===== Clone Complete =====
+  // ===== Clone Complete (v2.15 Neural Visibility Shield) =====
   function onCloneComplete(result, url) {
+    if (isCloneFinished) return;
+    isCloneFinished = true;
     setLoading(false);
+
+    // [PRIORITY 1] ABSOLUTE VISIBILITY Handshake (Reveal Buttons FIRST)
+    actionsSection.classList.remove('hidden');
+    actionsSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
     // Update progress to 100%
     progressBar.style.width = '100%';
@@ -237,37 +288,41 @@
     statusText.textContent = 'Clone complete!';
     statusIndicator.classList.add('done');
 
-    // Show stats
-    if (result.stats) {
-      const stats = result.stats;
-      statCSS.textContent = stats.assets?.byCategory?.css?.count || 0;
-      statJS.textContent = stats.assets?.byCategory?.js?.count || 0;
-      statImages.textContent = stats.assets?.byCategory?.images?.count || 0;
-      statFonts.textContent = stats.assets?.byCategory?.fonts?.count || 0;
-      statAnimations.textContent = (stats.css?.keyframes || 0) + (stats.css?.animationRules || 0);
-      statPages.textContent = stats.pages || 1;
-      statSize.textContent = formatSize(stats.assets?.totalSize || result.zipSize || 0);
-      
-      // V11: Final Neural Healing Count
-      aiStatCard.classList.remove('active-ai');
-      statAI.textContent = stats.ai?.appliedPatches || statAI.textContent;
-      
-      statsGrid.classList.remove('hidden');
+    // [PRIORITY 2] Fault-Tolerant Stats Logic
+    try {
+      if (result && result.stats) {
+        const stats = result.stats;
+        statCSS.textContent = stats.assets?.byCategory?.css?.count || 0;
+        statJS.textContent = stats.assets?.byCategory?.js?.count || 0;
+        statImages.textContent = stats.assets?.byCategory?.images?.count || 0;
+        statFonts.textContent = stats.assets?.byCategory?.fonts?.count || 0;
+        statAnimations.textContent = (stats.css?.keyframes || 0) + (stats.css?.animationRules || 0);
+        statPages.textContent = stats.pages || 1;
+        statSize.textContent = formatSize(stats.assets?.totalSize || result.zipSize || 0);
+        
+        if (stats.ai) {
+          aiStatCard.classList.remove('active-ai');
+          statAI.textContent = stats.ai?.appliedPatches || 0;
+        }
+        statsGrid.classList.remove('hidden');
+      }
+    } catch (e) {
+      console.warn('V8 Warning: Stats calculation incomplete, visibility maintained.');
     }
 
-    // Show action buttons
-    actionsSection.classList.remove('hidden');
-    actionsSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-    // Update history
+    // [PRIORITY 3] Permanent History Locking
     updateHistoryItem(currentJobId, 'completed', result);
+    renderHistory();
 
     // Final log entry
-    addLogEntry('done', `Finished in ${(result.duration / 1000).toFixed(1)}s — ${result.stats?.assets?.total || 0} assets extracted`);
+    const time = result && result.duration ? (result.duration / 1000).toFixed(1) : 'unknown';
+    addLogEntry('done', `Finished in ${time}s — Suite Masterwork Locked.`);
   }
 
   // ===== Clone Error =====
   function onCloneError(errorMsg) {
+    if (isCloneFinished) return;
+    isCloneFinished = true;
     setLoading(false);
     statusText.textContent = 'Clone failed';
     statusIndicator.classList.add('error');
@@ -380,42 +435,85 @@
     renderHistory();
   }
 
-  function renderHistory() {
-    const history = loadHistory();
+  async function renderHistory() {
+    try {
+      const response = await fetch('/api/jobs');
+      const history = await response.json();
 
-    if (history.length === 0) {
-      historyEmpty.classList.remove('hidden');
-      // Remove any history items
-      document.querySelectorAll('.history-item').forEach(el => el.remove());
-      return;
-    }
-
-    historyEmpty.classList.add('hidden');
-
-    // Remove existing items
-    document.querySelectorAll('.history-item').forEach(el => el.remove());
-
-    for (const item of history) {
-      const el = document.createElement('div');
-      el.className = 'history-item';
-      el.innerHTML = `
-        <div class="history-item-icon">🌐</div>
-        <div class="history-item-info">
-          <div class="history-item-url">${escapeHTML(item.url)}</div>
-          <div class="history-item-meta">${formatDate(item.createdAt)}${item.duration ? ' · ' + (item.duration / 1000).toFixed(1) + 's' : ''}</div>
-        </div>
-        <span class="history-item-status ${item.status}">${item.status}</span>
-      `;
-
-      if (item.status === 'completed') {
-        el.addEventListener('click', () => {
-          currentJobId = item.id;
-          urlInput.value = item.url;
-          previewBtn.click();
-        });
+      if (history.length === 0) {
+        historyEmpty.classList.remove('hidden');
+        document.querySelectorAll('.history-item').forEach(el => el.remove());
+        return;
       }
 
-      historyList.appendChild(el);
+      historyEmpty.classList.add('hidden');
+      document.querySelectorAll('.history-item').forEach(el => el.remove());
+
+      for (const item of history) {
+        // Heartbeat Handshake (v2.14): If the current job matches and server says it's completed, unlock the premium action buttons
+        if (item.id === currentJobId && item.status === 'completed' && !isCloneFinished) {
+          onCloneComplete(item.result, item.url);
+        }
+
+        const el = document.createElement('div');
+        el.className = 'history-item';
+        el.setAttribute('data-job-id', item.id);
+        el.innerHTML = `
+          <div class="history-item-icon">🌐</div>
+          <div class="history-item-info">
+            <div class="history-item-url">${escapeHTML(item.url)}</div>
+            <div class="history-item-meta">${formatDate(item.createdAt)}${item.duration ? ' · ' + (item.duration / 1000).toFixed(1) + 's' : ''}</div>
+          </div>
+          <span class="history-item-status ${item.status}">${item.status}</span>
+          <button class="history-purge-btn" title="Purge Clone From Record" data-id="${item.id}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/></svg>
+          </button>
+        `;
+
+        el.addEventListener('click', (e) => {
+          if (e.target.closest('.history-purge-btn')) return;
+          if (item.status === 'completed') {
+            currentJobId = item.id;
+            urlInput.value = item.url;
+            onCloneComplete(item.result, item.url);
+          }
+        });
+
+        const purgeBtn = el.querySelector('.history-purge-btn');
+        purgeBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (confirm('Surgical Purge: Are you absolute sure you want to delete this clone and all its files?')) {
+            await deleteJob(item.id);
+          }
+        });
+
+        historyList.appendChild(el);
+      }
+    } catch (err) {
+      console.error('History Sync Failed:', err);
+    }
+  }
+
+  /**
+   * Surgical Purge: Delete a single job.
+   */
+  async function deleteJob(jobId) {
+    if (!jobId) return;
+    const cleanId = jobId.trim();
+    try {
+      const response = await fetch(`/api/job/${cleanId}`, {
+        method: 'DELETE'
+      });
+      const data = await response.json();
+      
+      if (data.success || response.status === 404) {
+        // Ghost-Purge Resilience (v2.6): Remove from UI even if already gone from server
+        renderHistory();
+      } else {
+        showError(data.error || 'Failed to purge job');
+      }
+    } catch (err) {
+      showError('Surgical Purge Failed: ' + err.message);
     }
   }
 

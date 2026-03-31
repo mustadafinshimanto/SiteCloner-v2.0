@@ -26,5 +26,8 @@
     "mime-types": "^2.1.35",
     "puppeteer": "^23.5.0",
     "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "axios": "^1.14.0"
   }
 }

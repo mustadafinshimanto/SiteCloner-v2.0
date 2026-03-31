@@ -14,6 +14,23 @@ import { URLRewriter } from './url-rewriter.js';
 import { Packager } from './packager.js';
 import { AIFixer } from './ai-fixer.js';
 
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function safeNewPage(browser, retries = 2) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await browser.newPage();
+    } catch (err) {
+      if (err.message.includes('Session with given id not found') && i < retries - 1) {
+        console.warn(`[system] Neural Session Lost. Attempting reconnection (${i + 1}/${retries})...`);
+        await delay(2000);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 export class SiteCloner extends EventEmitter {
   constructor(options = {}) {
     super();
@@ -62,33 +79,71 @@ export class SiteCloner extends EventEmitter {
       const packager = new Packager(outputDir);
       const aiFixer = new AIFixer({
         apiKey: process.env.GEMINI_API_KEY,
+        model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
         onProgress: (p) => this.emit('progress', p)
       });
       
       let pagesCloned = 0;
+      const concurrencyLimit = 3;
 
-      while (queue.length > 0 && pagesCloned < maxPages) {
-        const currentUrl = queue.shift();
-        if (visited.has(currentUrl)) continue;
-        visited.add(currentUrl);
+      // Process initial page sequentially to discover links
+      const firstUrl = queue.shift();
+      if (firstUrl) {
+        visited.add(firstUrl);
         pagesCloned++;
-
         this.emit('progress', { 
           phase: 'navigate', 
-          message: `[${pagesCloned}/${maxPages}] Deep-scanning: ${currentUrl}`, 
-          percent: Math.min(90, (pagesCloned / maxPages) * 100) 
+          message: `[${pagesCloned}/${maxPages}] Primary Neural Link: ${firstUrl}`, 
+          percent: 5 
         });
+        const firstResult = await this.capturePage(firstUrl, browser, interceptor, packager, true, aiFixer, jobId);
+        results.push(firstResult);
 
-        const pageResult = await this.capturePage(currentUrl, browser, interceptor, packager, pagesCloned === 1, aiFixer, jobId);
-        results.push(pageResult);
+        if (isFullClone) {
+          const links = this.discoverInternalLinks(firstResult.html, url);
+          for (const l of links) {
+            if (!visited.has(l) && !queue.includes(l)) queue.push(l);
+          }
+        }
+      }
 
-        if (isFullClone && pagesCloned < maxPages) {
-          const internalLinks = this.discoverInternalLinks(pageResult.html, url);
-          for (const link of internalLinks) {
-            if (!visited.has(link) && !queue.includes(link)) {
-              queue.push(link);
+      // Process remaining queue in parallel batches
+      while (queue.length > 0 && pagesCloned < maxPages) {
+        const remaining = maxPages - pagesCloned;
+        const currentBatchSize = Math.min(queue.length, concurrencyLimit, remaining);
+        const batch = queue.splice(0, currentBatchSize);
+        
+        const batchPromises = batch.map(async (currentUrl) => {
+          if (visited.has(currentUrl)) return null;
+          visited.add(currentUrl);
+          const pIndex = ++pagesCloned;
+          
+          this.emit('progress', { 
+            phase: 'navigate', 
+            message: `[${pIndex}/${maxPages}] Quantum Weaving: ${currentUrl}`, 
+            percent: Math.min(90, (pIndex / maxPages) * 100) 
+          });
+
+          const pageResult = await this.capturePage(currentUrl, browser, interceptor, packager, false, aiFixer, jobId);
+          
+          if (isFullClone && pagesCloned < maxPages) {
+            const internalLinks = this.discoverInternalLinks(pageResult.html, url);
+            for (const link of internalLinks) {
+              if (!visited.has(link) && !queue.includes(link)) {
+                queue.push(link);
+              }
             }
           }
+          return pageResult;
+        });
+
+        const batchResults = await Promise.all(batchPromises);
+        results.push(...batchResults.filter(r => r !== null));
+
+        // Neural Breathing Space (v2.1)
+        if (queue.length > 0 && pagesCloned < maxPages) {
+          this.emit('progress', { phase: 'navigate', message: 'Neural Breathing Space: Recovering system descriptors...', percent: -1 });
+          await delay(2000);
         }
       }
 
@@ -97,8 +152,6 @@ export class SiteCloner extends EventEmitter {
       // Create ZIP
       const zipPath = outputDir + '.zip';
       const zipInfo = await packager.createZip(zipPath);
-
-      this.emit('progress', { phase: 'done', message: `V8 Clone Complete! Captured ${pagesCloned} pages.`, percent: 100 });
 
       const assetStats = interceptor.getStats();
       const result = {
@@ -115,10 +168,26 @@ export class SiteCloner extends EventEmitter {
         },
       };
 
+      this.emit('progress', { 
+        phase: 'done', 
+        message: `V8 Clone Complete! Captured ${pagesCloned} pages.`, 
+        percent: 100,
+        result // Pass result back proactively (v2.9)
+      });
+
       return result;
 
     } finally {
-      await browser.close();
+      if (browser) {
+        // Non-blocking browser teardown to prevent completion hangups (v2.11)
+        (async () => {
+          try {
+            await browser.close();
+          } catch (e) {
+            console.error(`[SYSTEM] Browser teardown warning: ${e.message}`);
+          }
+        })();
+      }
     }
   }
 
@@ -126,7 +195,7 @@ export class SiteCloner extends EventEmitter {
    * Capture a single page and its assets.
    */
   async capturePage(url, browser, interceptor, packager, isInitial = false, aiFixer = null, jobId = null) {
-    const page = await browser.newPage();
+    const page = await safeNewPage(browser);
     try {
       // Set viewport
       await page.setViewport(this.options.viewport);
@@ -162,6 +231,22 @@ export class SiteCloner extends EventEmitter {
       if (this.options.scrollToBottom) {
         await this.autoScroll(page);
       }
+
+      // V3.0 [Cinematic Overdrive]: Neural Media Heartbeat
+      // Force all background videos to "wake up" and trigger network requests
+      await page.evaluate(async () => {
+        const videos = Array.from(document.querySelectorAll('video'));
+        for (const video of videos) {
+          try {
+            video.muted = true;
+            video.setAttribute('playsinline', '');
+            video.setAttribute('autoplay', 'autoplay');
+            // Force a small play/pause cycle to trigger metadata and initial buffer
+            await video.play().catch(() => {});
+            setTimeout(() => video.pause(), 500);
+          } catch (e) {}
+        }
+      });
 
       // Wait for stability
       await this.waitForStability(page);

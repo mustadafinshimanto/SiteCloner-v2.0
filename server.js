@@ -29,6 +29,88 @@ const CLONES_DIR = path.join(__dirname, 'clones');
 fs.mkdirSync(CLONES_DIR, { recursive: true });
 
 /**
+ * Persist job metadata to disk for cold-boot recovery.
+ */
+function saveJobMetadata(jobId, job) {
+  try {
+    const jobDir = path.join(CLONES_DIR, jobId);
+    if (!fs.existsSync(jobDir)) {
+      fs.mkdirSync(jobDir, { recursive: true });
+    }
+    const metadataPath = path.join(jobDir, 'metadata.json');
+    // Don't persist SSE clients
+    const { sseClients, ...persistentJob } = job;
+    fs.writeFileSync(metadataPath, JSON.stringify(persistentJob, null, 2));
+  } catch (err) {
+    console.error(`[system] Failed to persist metadata for ${jobId}:`, err);
+  }
+}
+
+/**
+ * Scan clones directory and restore in-memory registry.
+ */
+function syncJobsFromDisk() {
+  console.log('\n  🧪 [sync] Initiating Neural History Sync...');
+  if (!fs.existsSync(CLONES_DIR)) return;
+
+  try {
+    const entries = fs.readdirSync(CLONES_DIR, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const jobId = entry.name;
+        if (jobId === 'ai') continue;
+        
+        try {
+          const metadataPath = path.join(CLONES_DIR, jobId, 'metadata.json');
+          if (fs.existsSync(metadataPath)) {
+            const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
+            metadata.sseClients = []; 
+            
+            // Neural Promotion (v2.12): If metadata says running but ZIP exists, promote it!
+            const zipPath = path.join(CLONES_DIR, `${jobId}.zip`);
+            if (metadata.status === 'running' && fs.existsSync(zipPath)) {
+              console.log(`  [sync] Promoting: ${jobId} (Found ZIP)`);
+              metadata.status = 'completed';
+              // Minimal result if missing
+              if (!metadata.result) metadata.result = { zipPath };
+            }
+            
+            jobs.set(jobId, metadata);
+            console.log(`  [sync] Restored: ${jobId} (${metadata.url})`);
+          } else {
+            const zipPath = path.join(CLONES_DIR, `${jobId}.zip`);
+            let birthtime;
+            try {
+              birthtime = fs.statSync(path.join(CLONES_DIR, jobId)).birthtime;
+            } catch {
+              birthtime = new Date();
+            }
+            
+            console.log(`  [sync] Discovery (Legacy): ${jobId}`);
+            jobs.set(jobId, {
+              id: jobId,
+              url: 'Unknown (Legacy)',
+              status: fs.existsSync(zipPath) ? 'completed' : 'failed',
+              createdAt: new Date(birthtime).toISOString(),
+              sseClients: [],
+              result: fs.existsSync(zipPath) ? { zipPath } : null,
+            });
+          }
+        } catch (jobErr) {
+          console.error(`  [sync] Failed folder ${jobId}:`, jobErr.message);
+        }
+      }
+    }
+    console.log(`  ⚡ [sync] Neural Sync Complete. ${jobs.size} jobs restored to memory.\n`);
+  } catch (err) {
+    console.error(`  ❌ [sync] Global Error:`, err.message);
+  }
+}
+
+// Initial Sync
+syncJobsFromDisk();
+
+/**
  * POST /api/clone — Start a new cloning job.
  */
 app.post('/api/clone', (req, res) => {
@@ -60,16 +142,25 @@ app.post('/api/clone', (req, res) => {
   };
 
   jobs.set(jobId, job);
+  saveJobMetadata(jobId, job);
 
   // Start cloning in background
   const cloner = new SiteCloner(options);
 
   cloner.on('progress', (event) => {
     job.progress.push(event);
-        if (event && event.phase === 'ai' && event.message) {
-          // Print AI progress to the cloning terminal for visibility.
-          console.log(`[ai] ${event.message}`);
-        }
+    if (event && event.phase === 'ai' && event.message) {
+      console.log(`[ai] ${event.message}`);
+    }
+    
+    // Proactive Completion (v2.11): Lock status and result when cloner signals done
+    // This state is absolute and cannot be reverted
+    if (event && event.phase === 'done') {
+      job.status = 'completed';
+      if (event.result) job.result = event.result;
+      saveJobMetadata(jobId, job);
+    }
+
     // Send to all SSE clients
     for (const client of job.sseClients) {
       client.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -78,11 +169,17 @@ app.post('/api/clone', (req, res) => {
 
   cloner.clone(url, outputDir, jobId)
     .then(result => {
-      job.status = 'completed';
-      job.result = result;
-      // Notify SSE clients
+      // Final promise resolution (v2.11): Only update if not already proactively completed
+      if (job.status !== 'completed') {
+        job.status = 'completed';
+        job.result = result;
+        saveJobMetadata(jobId, job);
+      }
+      
+      // Notify SSE clients with definitive completion signal
+      const finalResult = job.result || result;
       for (const client of job.sseClients) {
-        client.write(`data: ${JSON.stringify({ phase: 'complete', result })}\n\n`);
+        client.write(`data: ${JSON.stringify({ phase: 'complete', result: finalResult })}\n\n`);
         client.end();
       }
       job.sseClients = [];
@@ -90,6 +187,7 @@ app.post('/api/clone', (req, res) => {
     .catch(err => {
       job.status = 'failed';
       job.error = err.message;
+      saveJobMetadata(jobId, job);
       // Notify SSE clients
       for (const client of job.sseClients) {
         client.write(`data: ${JSON.stringify({ phase: 'error', error: err.message })}\n\n`);
@@ -99,6 +197,25 @@ app.post('/api/clone', (req, res) => {
     });
 
   res.json({ jobId, status: 'started' });
+});
+
+/**
+ * GET /api/jobs — Retrieve all cloning jobs (Absolute Source of Truth).
+ */
+app.get('/api/jobs', (req, res) => {
+  const jobList = Array.from(jobs.values()).map(j => ({
+    id: j.id,
+    url: j.url,
+    status: j.status,
+    createdAt: j.createdAt,
+    duration: j.result ? j.result.duration : null,
+    result: j.result,
+    error: j.error
+  }));
+  
+  // Sort by created date descending
+  jobList.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json(jobList);
 });
 
 /**
@@ -279,6 +396,88 @@ app.get('/api/job/:jobId', (req, res) => {
     createdAt: job.createdAt,
     result: job.result,
     error: job.error,
+  });
+});
+
+/**
+ * DELETE /api/job/:jobId — Delete a single job and its files.
+ */
+app.delete('/api/job/:jobId', (req, res) => {
+  const { jobId } = req.params;
+  console.log(`[purge] Neural Discovery Request: ${jobId}`);
+
+  let actualJobId = jobId;
+  let job = jobs.get(jobId);
+
+  // Neural Search Fallback: Case-insensitive disk scan (v2.3)
+  let jobDir = path.join(CLONES_DIR, jobId);
+  let zipPath = path.join(CLONES_DIR, `${jobId}.zip`);
+  let folderExists = fs.existsSync(jobDir);
+  let zipExists = fs.existsSync(zipPath);
+
+  if (!job && !folderExists && !zipExists) {
+    console.log(`[purge] Exact match failed. Initiating Neural Search...`);
+    const entries = fs.readdirSync(CLONES_DIR);
+    const match = entries.find(e => e.toLowerCase() === jobId.toLowerCase());
+    if (match) {
+      console.log(`[purge] Neural Search Success: Found match ${match}`);
+      actualJobId = match;
+      jobDir = path.join(CLONES_DIR, actualJobId);
+      zipPath = path.join(CLONES_DIR, `${actualJobId}.zip`);
+      folderExists = fs.existsSync(jobDir);
+      zipExists = fs.existsSync(zipPath);
+      job = jobs.get(actualJobId);
+    }
+  }
+
+  if (!job && !folderExists && !zipExists) {
+    console.error(`[purge] Neural ID Mismatch: ${jobId} not found on disk or memory.`);
+    return res.status(404).json({ error: 'Job not found on disk or memory' });
+  }
+
+  try {
+    // Nuclear Cleanup Fallback (v2.2)
+    if (folderExists) {
+      fs.rmSync(jobDir, { recursive: true, force: true });
+    }
+    if (zipExists) {
+      fs.rmSync(zipPath, { force: true });
+    }
+
+    // Remove from memory if it exists
+    jobs.delete(actualJobId);
+    if (jobId !== actualJobId) jobs.delete(jobId);
+
+    console.log(`[purge] Absolute Purge Complete: ${actualJobId}`);
+    res.json({ success: true, message: `Job ${actualJobId} and its files purged.` });
+  } catch (err) {
+    console.error(`[purge] Execution Error:`, err);
+    res.status(500).json({ error: 'Failed to purge job: ' + err.message });
+  }
+});
+
+/**
+ * GET /api/download/:jobId — Download the physical ZIP archive.
+ */
+app.get('/api/download/:jobId', (req, res) => {
+  const { jobId } = req.params;
+  const job = jobs.get(jobId);
+  const zipPath = path.join(CLONES_DIR, `${jobId}.zip`);
+
+  if (!fs.existsSync(zipPath)) {
+    return res.status(404).json({ error: 'ZIP archive not found for this job ID' });
+  }
+
+  // Absolute ZIP Delivery Handshake (v3.1)
+  const fileName = (job && job.url) ? 
+    `${new URL(job.url).hostname}_${jobId}.zip`.replace(/[^a-z0-9.]/gi, '_') : 
+    `${jobId}.zip`;
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.download(zipPath, fileName, (err) => {
+    if (err && !res.headersSent) {
+      res.status(500).json({ error: 'Failed to stream ZIP: ' + err.message });
+    }
   });
 });
 

@@ -12,9 +12,34 @@ function ensureDirSync(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
 }
 
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function safeNewPage(browser, retries = 2) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await browser.newPage();
+    } catch (err) {
+      if (err.message.includes('Session with given id not found') && i < retries - 1) {
+        console.warn(`[system] Neural Session Lost (AIFixer). Attempting reconnection (${i + 1}/${retries})...`);
+        await delay(2000);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 function readTextSafe(filePath) {
   try {
     return fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
+function base64FromFile(filePath) {
+  try {
+    return fs.readFileSync(filePath).toString('base64');
   } catch {
     return null;
   }
@@ -35,16 +60,12 @@ function extractJsonFromText(text) {
   return result;
 }
 
-function base64FromFile(filePath) {
-  const buf = fs.readFileSync(filePath);
-  return buf.toString('base64');
-}
+// base64FromFile definition has been consolidated for absolute stability.
 
 export class AIFixer {
-  constructor({ apiKey, model = 'gemini-1.5-flash', provider = 'gemini', onProgress = () => {} } = {}) {
+  constructor({ apiKey, model = 'gemini-1.5-flash', onProgress = () => {} } = {}) {
     this.apiKey = apiKey;
     this.model = model;
-    this.provider = provider;
     this.onProgress = onProgress;
 
     // Absolute Context Limits
@@ -105,16 +126,30 @@ export class AIFixer {
       this.emit({ phase: 'ai', message: `AI Healing Page: ${targetFile} (Absolute Depth)...`, percent: 88.5 });
       const patchInput = this.buildHyperContext(outputDir, targetFile);
 
-      this.emit({ phase: 'ai', message: 'AI Finisher: Activating Gemini V6 Ultra Inference...', percent: 88 });
+      this.emit({ phase: 'ai', message: 'AI Finisher: Activating Gemini v2.0 Neural Overdrive...', percent: 88 });
 
-      const modelResponse = await this.callAI({
-        url,
-        originalDiag,
-        cloneDiag,
-        originalScreenshotPath,
-        cloneScreenshotPath,
-        patchInput,
-      });
+      let modelResponse;
+      try {
+        modelResponse = await this.callAI({
+          url,
+          originalDiag,
+          cloneDiag,
+          originalScreenshotPath,
+          cloneScreenshotPath,
+          patchInput,
+        });
+      } catch (err) {
+        this.emit({ 
+          phase: 'ai', 
+          message: `Neural Bypass Activated: ${err.message.split('{')[0]}... Proceeding with static fidelity.`, 
+          percent: 90 
+        });
+        return {
+          appliedPatches: 0,
+          note: 'AI Healing bypassed due to inference failure.',
+          screenshots: { original: originalScreenshotPath, clone: cloneScreenshotPath },
+        };
+      }
 
       const jsonText = extractJsonFromText(modelResponse);
       if (!jsonText) {
@@ -150,7 +185,7 @@ export class AIFixer {
    * Captures error traces, network fail logs, and high-fidelity screenshots.
    */
   async captureDeepDiagnostics({ browser, targetUrl, label, outputDir, viewport, userAgent }) {
-    const page = await browser.newPage();
+    const page = await safeNewPage(browser);
     try {
       await page.setViewport(viewport);
       if (userAgent) await page.setUserAgent(userAgent);
@@ -213,7 +248,6 @@ export class AIFixer {
   }
 
   async callAI(params) {
-    if (this.provider === 'deepseek') return this.callDeepSeek(params);
     return this.callGemini(params);
   }
 
@@ -260,8 +294,8 @@ PATCHABLE FILES (FULL CONTENT):
 ${JSON.stringify(patchInput, null, 2)}
 `;
 
-    const versions = ['v1', 'v1beta'];
-    const names = [this.model, 'gemini-1.5-flash', 'gemini-1.5-flash-latest'];
+    const versions = ['v1beta'];
+    const names = [this.model, 'gemini-1.5-flash'];
     let lastErr = '';
 
     for (const v of versions) {
@@ -311,20 +345,4 @@ ${JSON.stringify(patchInput, null, 2)}
     return { applied, skipped, note: `Absolute Power deployed ${applied} patches.` };
   }
 
-  async callDeepSeek({ url, originalDiag, cloneDiag, patchInput }) {
-    const apiKey = this.apiKey;
-    const model = this.model || 'deepseek-chat';
-    const endpoint = 'https://api.deepseek.com/chat/completions';
-    const prompt = `YOU ARE THE ABSOLUTE MASTER OF WEB FIDELITY. GIVEN AN ORIGINAL WEBSITE AND A FAILED CLONE, YOU MUST GENERATE SURGICAL PATCHES TO RESTORE 100% VISUAL AND FUNCTIONAL IDENTITY.\n\nDIAGNOSTIC DATA: ${url}, ${JSON.stringify(originalDiag)}, ${JSON.stringify(cloneDiag)}\n\nOUTPUT ONLY JSON: {"patches": [{"file": "index.html", "search": "...", "replace": "...", "reason": "..."}]}\n\nFILES: ${JSON.stringify(patchInput)}`;
-
-    this.emit({ phase: 'ai', message: 'V6 Ultra: Activating DeepSeek Extreme Inference...', percent: 88.8 });
-    const resp = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.1, response_format: { type: 'json_object' } }),
-    });
-    if (!resp.ok) throw new Error(`DeepSeek Ultra failure: ${await resp.text()}`);
-    const json = await resp.json();
-    return json?.choices?.[0]?.message?.content || '';
-  }
 }

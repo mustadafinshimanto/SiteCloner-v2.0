@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import mime from 'mime-types';
 import { URL } from 'url';
+import axios from 'axios';
 
 export class NetworkInterceptor {
   constructor(outputDir) {
@@ -20,6 +21,8 @@ export class NetworkInterceptor {
       videos: ['video/mp4', 'video/webm', 'video/ogg'],
       audio: ['audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm'],
     };
+    this.knownPaths = new Set();
+    this.savingPaths = new Set(); // Multi-page concurrency lock (v2.1)
   }
 
   /**
@@ -111,28 +114,44 @@ export class NetworkInterceptor {
         try {
           buffer = await response.buffer();
         } catch {
-          // Some responses may not have a body
-          return;
+          // V3.0 [Cinematic Overdrive]: Resilient Media Fallback
+          // If Puppeteer buffer fails (common for large videos), use standalone fetch
+          const category = self.getCategory(contentType);
+          if (category === 'videos' || category === 'audio') {
+            console.log(`[system] Neural Media Fallback: Downloading large asset: ${path.basename(localPath)}`);
+            try {
+              const res = await axios.get(url, { responseType: 'arraybuffer', timeout: 60000 });
+              buffer = Buffer.from(res.data);
+            } catch (err) {
+              console.warn(`[system] Media Fallback Failed for ${url}: ${err.message}`);
+              return;
+            }
+          } else {
+            return;
+          }
         }
 
         if (!buffer || buffer.length === 0) return;
 
-        // Ensure unique local paths
+        // Ensure unique local paths (Neural Write-Lock v2.1)
         let uniquePath = localPath;
         let counter = 1;
-        const existingPaths = new Set([...self.assets.values()].map(a => a.localPath));
-        while (existingPaths.has(uniquePath)) {
+        while (self.knownPaths.has(uniquePath) || self.savingPaths.has(uniquePath)) {
           const ext = path.extname(localPath);
           const base = localPath.slice(0, -ext.length || undefined);
           uniquePath = `${base}_${counter}${ext}`;
           counter++;
         }
         localPath = uniquePath;
+        self.savingPaths.add(localPath);
 
         // Save to disk
         const fullPath = path.join(self.outputDir, localPath);
         fs.mkdirSync(path.dirname(fullPath), { recursive: true });
         fs.writeFileSync(fullPath, buffer);
+        
+        self.knownPaths.add(localPath);
+        self.savingPaths.delete(localPath);
 
         const category = self.getCategory(contentType);
 
@@ -178,22 +197,25 @@ export class NetworkInterceptor {
 
       let localPath = this.generateLocalPath(urlStr, contentType);
       
-      // Ensure unique local paths
+      // Ensure unique local paths (Neural Write-Lock v2.1)
       let uniquePath = localPath;
       let counter = 1;
-      const existingPaths = new Set([...this.assets.values()].map(a => a.localPath));
-      while (existingPaths.has(uniquePath)) {
+      while (this.knownPaths.has(uniquePath) || this.savingPaths.has(uniquePath)) {
         const ext = path.extname(localPath);
         const base = localPath.slice(0, -ext.length || undefined);
         uniquePath = `${base}_${counter}${ext}`;
         counter++;
       }
       localPath = uniquePath;
+      this.savingPaths.add(localPath);
 
       // Save to disk
       const fullPath = path.join(this.outputDir, localPath);
       fs.mkdirSync(path.dirname(fullPath), { recursive: true });
       fs.writeFileSync(fullPath, buffer);
+
+      this.knownPaths.add(localPath);
+      this.savingPaths.delete(localPath);
 
       const category = this.getCategory(contentType);
 
