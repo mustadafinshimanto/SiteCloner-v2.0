@@ -37,6 +37,7 @@
   const statImages = document.getElementById('stat-images');
   const statFonts = document.getElementById('stat-fonts');
   const statAnimations = document.getElementById('stat-animations');
+  const statPages = document.getElementById('stat-pages');
   const statSize = document.getElementById('stat-size');
 
   // ===== State =====
@@ -69,6 +70,7 @@
       waitTimeout: parseInt(document.getElementById('opt-timeout').value) || 30000,
       scrollToBottom: document.getElementById('opt-scroll').checked,
       captureJS: document.getElementById('opt-js').checked,
+      fullClone: document.getElementById('opt-full').checked,
       aiFinish: document.getElementById('opt-ai').checked,
       viewport: {
         width: parseInt(document.getElementById('opt-viewport').value) || 1920,
@@ -224,6 +226,7 @@
       statImages.textContent = stats.assets?.byCategory?.images?.count || 0;
       statFonts.textContent = stats.assets?.byCategory?.fonts?.count || 0;
       statAnimations.textContent = (stats.css?.keyframes || 0) + (stats.css?.animationRules || 0);
+      statPages.textContent = stats.pages || 1;
       statSize.textContent = formatSize(stats.assets?.totalSize || result.zipSize || 0);
       statsGrid.classList.remove('hidden');
     }

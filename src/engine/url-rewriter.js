@@ -115,8 +115,34 @@ export class URLRewriter {
       if (url.startsWith('#') || url.startsWith('mailto:') || url.startsWith('tel:') || url.startsWith('javascript:')) {
         return match;
       }
+      
       const absoluteUrl = this.resolveUrl(url);
       if (!absoluteUrl) return match;
+
+      // V8: Internal Page Link Translation
+      try {
+        const parsed = new URL(absoluteUrl);
+        const baseParsed = new URL(this.baseUrl);
+        
+        if (parsed.origin === baseParsed.origin) {
+          // If it's a page link (not an asset)
+          const ext = path.extname(parsed.pathname).toLowerCase();
+          if (!ext || ext === '.html' || ext === '.php' || ext === '.asp') {
+            let localPagePath = parsed.pathname;
+            if (localPagePath === '/' || !localPagePath) {
+              localPagePath = 'index.html';
+            } else {
+              if (localPagePath.startsWith('/')) localPagePath = localPagePath.slice(1);
+              if (!localPagePath.endsWith('.html')) {
+                localPagePath = localPagePath.replace(/\/$/, '') + '.html';
+              }
+            }
+            this.rewriteCount++;
+            return prefix + localPagePath + suffix;
+          }
+        }
+      } catch {}
+
       const localPath = this.findLocalPath(absoluteUrl);
       if (!localPath) return match;
       this.rewriteCount++;

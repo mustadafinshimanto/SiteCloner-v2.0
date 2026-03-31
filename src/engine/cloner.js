@@ -34,7 +34,10 @@ export class SiteCloner extends EventEmitter {
    */
   async clone(url, outputDir) {
     const startTime = Date.now();
-    this.emit('progress', { phase: 'init', message: 'Initializing browser engine...', percent: 0 });
+    const isFullClone = this.options.fullClone === true;
+    const maxPages = this.options.maxPages || (isFullClone ? 20 : 1);
+    
+    this.emit('progress', { phase: 'init', message: `Initializing V8 Absolute Power Engine (Mode: ${isFullClone ? 'Full Site' : 'Single Page'})...`, percent: 0 });
 
     // Ensure output dir exists
     fs.mkdirSync(outputDir, { recursive: true });
@@ -52,8 +55,75 @@ export class SiteCloner extends EventEmitter {
     });
 
     try {
-      const page = await browser.newPage();
+      const queue = [url];
+      const visited = new Set();
+      const results = [];
+      const interceptor = new NetworkInterceptor(outputDir);
+      const packager = new Packager(outputDir);
+      
+      let pagesCloned = 0;
 
+      while (queue.length > 0 && pagesCloned < maxPages) {
+        const currentUrl = queue.shift();
+        if (visited.has(currentUrl)) continue;
+        visited.add(currentUrl);
+        pagesCloned++;
+
+        this.emit('progress', { 
+          phase: 'navigate', 
+          message: `[${pagesCloned}/${maxPages}] Deep-scanning: ${currentUrl}`, 
+          percent: Math.min(90, (pagesCloned / maxPages) * 100) 
+        });
+
+        const pageResult = await this.capturePage(currentUrl, browser, interceptor, packager, pagesCloned === 1);
+        results.push(pageResult);
+
+        if (isFullClone && pagesCloned < maxPages) {
+          const internalLinks = this.discoverInternalLinks(pageResult.html, url);
+          for (const link of internalLinks) {
+            if (!visited.has(link) && !queue.includes(link)) {
+              queue.push(link);
+            }
+          }
+        }
+      }
+
+      this.emit('progress', { phase: 'package', message: 'Finalizing V8 absolute pack...', percent: 95 });
+
+      // Create ZIP
+      const zipPath = outputDir + '.zip';
+      const zipInfo = await packager.createZip(zipPath);
+
+      this.emit('progress', { phase: 'done', message: `V8 Clone Complete! Captured ${pagesCloned} pages.`, percent: 100 });
+
+      const assetStats = interceptor.getStats();
+      const result = {
+        success: true,
+        url,
+        pagesCloned,
+        outputDir,
+        zipPath,
+        zipSize: zipInfo.size,
+        duration: Date.now() - startTime,
+        stats: {
+          assets: assetStats,
+          pages: results.length,
+        },
+      };
+
+      return result;
+
+    } finally {
+      await browser.close();
+    }
+  }
+
+  /**
+   * Capture a single page and its assets.
+   */
+  async capturePage(url, browser, interceptor, packager, isInitial = false) {
+    const page = await browser.newPage();
+    try {
       // Set viewport
       await page.setViewport(this.options.viewport);
 
@@ -62,223 +132,108 @@ export class SiteCloner extends EventEmitter {
         await page.setUserAgent(this.options.userAgent);
       }
 
-      // Bypass CSP to access all styles
+      // Bypass CSP
       await page.setBypassCSP(true);
 
-      this.emit('progress', { phase: 'init', message: 'Browser ready. Setting up interceptors...', percent: 5 });
-
-      // ===== LAYER 1: Network Interception =====
-      const interceptor = new NetworkInterceptor(outputDir);
+      // Attach interceptor
       await interceptor.attach(page, (assetInfo) => {
-        this.emit('progress', {
-          phase: 'download',
-          message: `Downloaded: ${assetInfo.category}/${path.basename(assetInfo.localPath)}`,
-          percent: Math.min(40, 10 + assetInfo.total * 0.5),
-          asset: assetInfo,
-        });
+        if (isInitial) {
+          this.emit('progress', {
+            phase: 'download',
+            message: `Extracting: ${assetInfo.category}/${path.basename(assetInfo.localPath)}`,
+            percent: Math.min(40, 10 + assetInfo.total * 0.2),
+          });
+        }
       });
 
-      this.emit('progress', { phase: 'navigate', message: `Navigating to ${url}...`, percent: 10 });
-
-      // Navigate to the page
+      // Navigate
       try {
-        await page.goto(url, {
-          waitUntil: 'networkidle0',
-          timeout: this.options.waitTimeout,
-        });
-      } catch (navError) {
-        // Try with networkidle2 as fallback (more lenient)
-        this.emit('progress', { phase: 'navigate', message: 'Retrying with relaxed wait...', percent: 12 });
-        await page.goto(url, {
-          waitUntil: 'networkidle2',
-          timeout: this.options.waitTimeout,
-        });
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: this.options.waitTimeout });
+      } catch (e) {
+        // Retry navigation once if it fails
+        await page.goto(url, { waitUntil: 'networkidle0', timeout: this.options.waitTimeout });
       }
 
-      this.emit('progress', { phase: 'navigate', message: 'Page loaded successfully!', percent: 30 });
-
-      // Wait extra for lazy-loaded content and late animations
-      await this.delay(2000);
-
-      // Scroll to bottom to trigger lazy loading
+      // Scroll to trigger lazy loading
       if (this.options.scrollToBottom) {
-        this.emit('progress', { phase: 'scroll', message: 'Scrolling page to load all content...', percent: 35 });
         await this.autoScroll(page);
-        await this.delay(2000);
       }
 
-      // Wait for any remaining network activity
-      await this.waitForNetworkIdle(page, 1500);
-
-      this.emit('progress', { phase: 'extract', message: 'Waiting for DOM stability...', percent: 40 });
+      // Wait for stability
       await this.waitForStability(page);
-
-      this.emit('progress', { phase: 'extract', message: 'Waiting for web fonts to load...', percent: 44 });
       await this.waitForFonts(page);
 
-      this.emit('progress', { phase: 'extract', message: 'Extracting DOM structure (including Shadow DOM)...', percent: 45 });
-
-      // ===== LAYER 2: DOM Serialization =====
+      // Serializing
       const domSerializer = new DOMSerializer();
-      // ===== LAYER 0: Lazy-Load Triggering =====
-      this.emit('progress', { phase: 'pre-capture', message: 'Triggering lazy-load (auto-scrolling)...', percent: 62 });
-      await this.autoScroll(page);
+      const { html, metaInfo } = await domSerializer.serialize(page);
 
-      // (Proceed with original HTML capture)
-      const { html, inlineStyles, metaInfo } = await domSerializer.serialize(page);
-
-      this.emit('progress', { phase: 'extract', message: 'Extracting CSS animations & keyframes (CORS-Ready)...', percent: 55 });
-
-      // ===== LAYER 3: CSS Extraction =====
+      // CSS Extraction
       const assetMap = interceptor.getAssetMap();
       const cssExtractor = new CSSExtractor();
       await cssExtractor.extract(page);
-      
-      // Manual parse for cross-origin styles
       cssExtractor.manualParse(assetMap);
 
-      this.emit('progress', { phase: 'extract', message: 'Extracting computed styles...', percent: 60 });
-
-      // Extract computed styles for key elements
+      // Computed Styles (V7 Holographic)
       const computedStyles = await domSerializer.extractComputedStyles(page);
 
-      this.emit('progress', { phase: 'rewrite', message: 'Rewriting asset URLs (V4 High-Fidelity enabled)...', percent: 65 });
-
-      // ===== LAYER 4: URL Rewriting =====
+      // URL Rewriting (V8 Navigation Ready)
       const urlRewriter = new URLRewriter(assetMap, url);
-      
-      // V4: Discovery Scan for missed assets in HTML
-      const missedAssets = this.discoverAssets(html, url);
-      if (missedAssets.length > 0) {
-        this.emit('progress', { phase: 'rewrite', message: `Downloading ${missedAssets.length} additional assets...`, percent: 70 });
-        for (const assetUrl of missedAssets) {
-          try {
-            await interceptor.downloadAsset(assetUrl);
-          } catch (e) {
-            // Silently ignore individual download failures
-          }
-        }
-      }
-
       let rewrittenHTML = urlRewriter.rewriteHTML(html);
 
-
-      this.emit('progress', { phase: 'package', message: 'Packaging files...', percent: 75 });
-
-      // ===== LAYER 5: Packaging =====
-      const packager = new Packager(outputDir);
-
-      // Write the animations CSS
-      const animCSS = cssExtractor.generateAnimationsCSS();
-      packager.writeAnimationsCSS(animCSS);
-
-      // Rewrite CSS files
-      packager.rewriteCSSFiles(urlRewriter);
-
-      // Inject the extracted-animations.css link if it exists
-      if (animCSS && animCSS.trim().length > 50) {
-        rewrittenHTML = rewrittenHTML.replace(
-          '</head>',
-          '  <link rel="stylesheet" href="css/extracted-animations.css">\n</head>'
-        );
-      }
-
-      // V7: Inject Holographic Styles (Bake live computed state and variables)
+      // V7: Inject Holographic Styles
       rewrittenHTML = packager.injectHolographicStyles(rewrittenHTML, computedStyles, cssExtractor.customProperties);
 
-      // Write the main HTML
-      packager.writeHTML(rewrittenHTML);
+      // Determine local filename
+      const urlObj = new URL(url);
+      let filename = urlObj.pathname === '/' || !urlObj.pathname ? 'index.html' : urlObj.pathname;
+      if (filename.startsWith('/')) filename = filename.slice(1);
+      if (!filename.endsWith('.html')) {
+        filename = filename.replace(/\/$/, '') + '.html';
+      }
+
+      // Write page
+      packager.writeHTML(rewrittenHTML, filename);
       
-      // Generate the quick launch (run.bat) file
-      packager.writeLaunchBat();
-
-      this.emit('progress', { phase: 'package', message: 'Generating manifest...', percent: 85 });
-
-      // Generate manifest
-      const assetStats = interceptor.getStats();
-      const cssStats = cssExtractor.getStats();
-      const rewriteStats = urlRewriter.getStats();
-      const manifestInput = {
-        url,
-        clonedAt: new Date().toISOString(),
-        duration: Date.now() - startTime,
-        assets: assetStats,
-        css: cssStats,
-        urlRewrites: rewriteStats.rewriteCount,
-        metaInfo,
-      };
-
-      packager.generateManifest(manifestInput);
-
-      // ===== AI FINISHER (optional) =====
-      let aiSummary = null;
-      if (this.options.aiFinish) {
-        const provider = process.env.AI_PROVIDER || 'gemini';
-        const apiKey = provider === 'deepseek' ? process.env.DEEPSEEK_API_KEY : process.env.GEMINI_API_KEY;
-        const model = provider === 'deepseek' ? (process.env.DEEPSEEK_MODEL || 'deepseek-chat') : (process.env.GEMINI_MODEL || 'gemini-1.5-flash');
-
-        if (!apiKey) {
-          const keyName = provider === 'deepseek' ? 'DEEPSEEK_API_KEY' : 'GEMINI_API_KEY';
-          this.emit('progress', { phase: 'ai', message: `AI finishing skipped (${keyName} not set).`, percent: 86 });
-        } else {
-          const aiFixer = new AIFixer({
-            apiKey,
-            model,
-            provider,
-            onProgress: (evt) => this.emit('progress', evt),
-          });
-
-          this.emit('progress', { phase: 'ai', message: `AI finishing: analyzing clone stability with ${provider}...`, percent: 86 });
-          aiSummary = await aiFixer.finish({
-            url,
-            outputDir,
-            jobId: path.basename(outputDir),
-            viewport: this.options.viewport,
-            userAgent: this.options.userAgent,
-            browser,
-          });
-        }
+      // If it's the initial page, write the animations and run.bat
+      if (isInitial) {
+        const animCSS = cssExtractor.generateAnimationsCSS();
+        packager.writeAnimationsCSS(animCSS);
+        packager.writeLaunchBat();
+        // Rewrite CSS files for global assets
+        packager.rewriteCSSFiles(urlRewriter);
       }
 
-      // If AI patched anything, regenerate manifest so sizes reflect final output.
-      if (aiSummary && aiSummary.appliedPatches > 0) {
-        packager.generateManifest({
-          ...manifestInput,
-          clonedAt: new Date().toISOString(),
-        });
-      }
-
-      this.emit('progress', { phase: 'zip', message: 'Creating ZIP archive...', percent: 90 });
-
-      // Create ZIP
-      const zipPath = outputDir + '.zip';
-      const zipInfo = await packager.createZip(zipPath);
-
-      this.emit('progress', { phase: 'done', message: 'Clone complete!', percent: 100 });
-
-      const result = {
-        success: true,
-        url,
-        outputDir,
-        zipPath,
-        zipSize: zipInfo.size,
-        duration: Date.now() - startTime,
-        stats: {
-          assets: assetStats,
-          css: cssStats,
-          urlRewrites: rewriteStats.rewriteCount,
-          unresolvedUrls: rewriteStats.unresolvedUrls.length,
-          computedStyleElements: Object.keys(computedStyles).length,
-          ai: aiSummary,
-        },
-        metaInfo,
-      };
-
-      return result;
-
+      return { url, filename, html: rewrittenHTML, metaInfo };
     } finally {
-      await browser.close();
+      await page.close();
     }
+  }
+
+  /**
+   * Discover internal links on a given page.
+   */
+  discoverInternalLinks(html, baseUrl) {
+    const linkRegex = /<a\s+(?:[^>]*?\s+)?href=["']([^"']+)["']/gi;
+    const internalLinks = new Set();
+    const baseOrigin = new URL(baseUrl).origin;
+    let match;
+
+    while ((match = linkRegex.exec(html)) !== null) {
+      let link = match[1];
+      if (link.startsWith('#') || link.startsWith('javascript:') || link.startsWith('mailto:') || link.startsWith('tel:')) continue;
+      
+      try {
+        const absoluteUrl = new URL(link, baseUrl);
+        if (absoluteUrl.origin === baseOrigin) {
+          // Remove hash and trailing slash for normalization
+          absoluteUrl.hash = '';
+          const cleanUrl = absoluteUrl.href.replace(/\/$/, '');
+          internalLinks.add(cleanUrl);
+        }
+      } catch (e) {}
+    }
+
+    return [...internalLinks];
   }
 
   /**

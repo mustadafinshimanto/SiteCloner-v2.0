@@ -188,7 +188,19 @@ app.get('/api/preview/:jobId/*', (req, res) => {
 
   const cloneDir = path.join(CLONES_DIR, req.params.jobId);
   const requestedPath = req.params[0] || 'index.html';
-  const filePath = path.join(cloneDir, requestedPath);
+  let filePath = path.join(cloneDir, requestedPath);
+
+  // V8: Smart Multi-Page Resolution
+  if (!fs.existsSync(filePath)) {
+    // 1. Try appending .html
+    if (fs.existsSync(filePath + '.html')) {
+        filePath += '.html';
+    } 
+    // 2. Try appending index.html for directories
+    else if (fs.existsSync(path.join(filePath, 'index.html'))) {
+        filePath = path.join(filePath, 'index.html');
+    }
+  }
 
   // Security: ensure the path is within the clone directory
   if (!filePath.startsWith(cloneDir)) {
@@ -196,7 +208,13 @@ app.get('/api/preview/:jobId/*', (req, res) => {
   }
 
   if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'File not found' });
+    // Last ditch: check if it's a directory link that should be index.html
+    const indexFallback = path.join(filePath, 'index.html');
+    if (fs.existsSync(indexFallback)) {
+        filePath = indexFallback;
+    } else {
+        return res.status(404).json({ error: 'File not found: ' + requestedPath });
+    }
   }
 
   const mimeType = mime.lookup(filePath) || 'application/octet-stream';

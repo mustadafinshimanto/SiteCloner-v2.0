@@ -12,17 +12,14 @@ export class Packager {
   }
 
   /**
-   * Write the main HTML file.
+   * Write an HTML file to the output directory.
    */
-  writeHTML(html) {
-    const htmlPath = path.join(this.outputDir, 'index.html');
+  writeHTML(html, filename = 'index.html') {
+    const htmlPath = path.join(this.outputDir, filename);
     fs.mkdirSync(path.dirname(htmlPath), { recursive: true });
-    // `html` is produced by DOMSerializer and already contains the full HTML document
-    // (including `<!DOCTYPE html>` and `<html ...>`). Wrapping it again breaks the output.
+    
     let finalHtml = html;
-    const alreadyHasDoc =
-      /<!DOCTYPE\s+html/i.test(html) ||
-      /<html\b/i.test(html);
+    const alreadyHasDoc = /<!DOCTYPE\s+html/i.test(html) || /<html\b/i.test(html);
 
     if (!alreadyHasDoc) {
       finalHtml = `<!DOCTYPE html>\n<html>${html}</html>`;
