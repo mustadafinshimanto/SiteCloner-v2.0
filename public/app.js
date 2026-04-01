@@ -82,6 +82,10 @@
   init();
 
   // ===== Advanced Options Toggle =====
+  optionsToggle.addEventListener('click', () => {
+    optionsToggle.classList.toggle('open');
+    optionsPanel.classList.toggle('open');
+  });
 
   // ===== Form Submission =====
   cloneForm.addEventListener('submit', async (e) => {
