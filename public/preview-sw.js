@@ -15,23 +15,26 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+  const isNextPath = url.pathname.includes('/_next/') || url.pathname.includes('/static/') || url.pathname.includes('/assets/');
   
-  // Only handle requests to the same origin
-  if (url.origin !== self.location.origin) return;
-
-  // We only want to handle requests that might be relative to the previewJobID/
-  // But browsers often make requests relative to origin (e.g. /_next/static/...)
+  // Handle requests to the same origin OR requests to known framework paths
+  if (url.origin !== self.location.origin && !isNextPath) return;
+  
   // If the request is not already within the preview path, we re-route it.
-  
   if (!url.pathname.startsWith(PREVIEW_ROOT)) {
     // Try to map the request into the preview directory
-    const newPath = PREVIEW_ROOT + (url.pathname.startsWith('/') ? url.pathname.slice(1) : url.pathname);
+    // We strip the leading slash from the pathname if it exists
+    let cleanPath = url.pathname;
+    if (cleanPath.startsWith('/')) cleanPath = cleanPath.slice(1);
+    
+    const newPath = PREVIEW_ROOT + cleanPath;
     const newUrl = new URL(newPath, self.location.origin);
     
     event.respondWith(
       fetch(newUrl).then(response => {
         if (response.status === 404) {
-          // If mapping failed, just let it go through as-is
+          // If mapping failed, just let it go through as-is if it's cross-origin
+          // but if it's same-origin we already tried the best we could.
           return fetch(event.request);
         }
         return response;

@@ -63,7 +63,19 @@ function syncJobsFromDisk() {
         try {
           const metadataPath = path.join(CLONES_DIR, jobId, 'metadata.json');
           if (fs.existsSync(metadataPath)) {
-            const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
+            // Resilient Read: Attempt to read metadata with structural lock recovery (v3.3)
+            let metadataStr;
+            try {
+              metadataStr = fs.readFileSync(metadataPath, 'utf-8');
+            } catch (readErr) {
+              if (readErr.code === 'EBUSY') {
+                console.warn(`  [sync] Lock detected on ${jobId}. Retrying with neural bypass...`);
+                metadataStr = fs.readFileSync(metadataPath, 'utf-8'); // Second attempt
+              } else {
+                throw readErr;
+              }
+            }
+            const metadata = JSON.parse(metadataStr);
             metadata.sseClients = []; 
             
             // Neural Promotion (v2.12): If metadata says running but ZIP exists, promote it!
@@ -201,6 +213,7 @@ app.post('/api/clone', (req, res) => {
 
 /**
  * GET /api/jobs — Retrieve all cloning jobs (Absolute Source of Truth).
+ * Merged with legacy lists for unified tracking (v3.2)
  */
 app.get('/api/jobs', (req, res) => {
   const jobList = Array.from(jobs.values()).map(j => ({
@@ -209,6 +222,8 @@ app.get('/api/jobs', (req, res) => {
     status: j.status,
     createdAt: j.createdAt,
     duration: j.result ? j.result.duration : null,
+    stats: j.result?.stats || null,
+    metaInfo: j.result?.metaInfo || null,
     result: j.result,
     error: j.error
   }));
@@ -260,35 +275,32 @@ app.get('/api/status/:jobId', (req, res) => {
 });
 
 /**
- * GET /api/download/:jobId — Download the ZIP file.
+ * GET /api/download/:jobId — Download the ZIP file (Absolute Handshake v3.1).
  */
 app.get('/api/download/:jobId', (req, res) => {
-  const job = jobs.get(req.params.jobId);
-  if (!job) {
-    return res.status(404).json({ error: 'Job not found' });
-  }
-  if (job.status !== 'completed') {
-    return res.status(400).json({ error: 'Job not completed yet' });
-  }
+  const jobId = req.params.jobId;
+  const job = jobs.get(jobId);
+  const zipPath = path.join(CLONES_DIR, `${jobId}.zip`);
 
-  const zipPath = job.result.zipPath;
   if (!fs.existsSync(zipPath)) {
-    return res.status(404).json({ error: 'ZIP file not found' });
+    return res.status(404).json({ error: 'ZIP archive not found for this job ID' });
   }
 
   // Extract hostname for filename
   let hostname = 'site';
-  try {
-    const urlObj = new URL(job.url);
-    hostname = urlObj.hostname.replace(/[^a-zA-Z0-9.-]/g, '_');
-  } catch {}
+  if (job && job.url) {
+    try {
+      const urlObj = new URL(job.url);
+      hostname = urlObj.hostname.replace(/[^a-zA-Z0-9.-]/g, '_');
+    } catch {}
+  }
 
-  const friendlyFilename = `${hostname}_clone.zip`;
+  const friendlyFilename = `${hostname}_${jobId.slice(0, 8)}.zip`;
 
-  // Use Express built-in download method for reliability
+  res.setHeader('Content-Type', 'application/zip');
   res.download(zipPath, friendlyFilename, (err) => {
     if (err && !res.headersSent) {
-      res.status(500).json({ error: 'Failed to download ZIP' });
+      res.status(500).json({ error: 'Failed to download ZIP: ' + err.message });
     }
   });
 });
@@ -317,6 +329,17 @@ app.get('/api/preview/:jobId/*', (req, res) => {
     else if (fs.existsSync(path.join(filePath, 'index.html'))) {
         filePath = path.join(filePath, 'index.html');
     }
+    // 3. V8 Neural: Search in categorized subdirectories (js/, css/, images/, data/, etc.)
+    else {
+      const categories = ['js', 'css', 'images', 'fonts', 'videos', 'audio', 'data', 'other'];
+      for (const cat of categories) {
+        const catPath = path.join(cloneDir, cat, requestedPath);
+        if (fs.existsSync(catPath)) {
+          filePath = catPath;
+          break;
+        }
+      }
+    }
   }
 
   // Security: ensure the path is within the clone directory
@@ -336,20 +359,24 @@ app.get('/api/preview/:jobId/*', (req, res) => {
 
   const mimeType = mime.lookup(filePath) || 'application/octet-stream';
   res.setHeader('Content-Type', mimeType);
+  // V2.19: CORS headers are essential for module scripts and fonts to load in the preview
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   fs.createReadStream(filePath).pipe(res);
 });
 
 /**
  * POST /api/reset — Clear all jobs and delete all cloned files.
  */
-app.post('/api/reset', (req, res) => {
+app.post('/api/reset', async (req, res) => {
   try {
     // Clear in-memory jobs
     jobs.clear();
 
-    // Delete and recreate clones directory
+    // V2.22: Strong Windows EBUSY/EPERM fix using async rm with retries
     if (fs.existsSync(CLONES_DIR)) {
-      fs.rmSync(CLONES_DIR, { recursive: true, force: true });
+      await fs.promises.rm(CLONES_DIR, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
     }
     fs.mkdirSync(CLONES_DIR, { recursive: true });
 
@@ -361,28 +388,7 @@ app.post('/api/reset', (req, res) => {
 
 
 /**
- * GET /api/jobs — List recent jobs.
- */
-app.get('/api/jobs', (req, res) => {
-  const jobList = [];
-  for (const [id, job] of jobs) {
-    jobList.push({
-      id,
-      url: job.url,
-      status: job.status,
-      createdAt: job.createdAt,
-      stats: job.result?.stats || null,
-      metaInfo: job.result?.metaInfo || null,
-      duration: job.result?.duration || null,
-    });
-  }
-  // Sort by creation date descending
-  jobList.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  res.json(jobList);
-});
-
-/**
- * GET /api/job/:jobId — Get job details.
+ * GET /api/job/:jobId — Get a single job's status and result (for polling fallback).
  */
 app.get('/api/job/:jobId', (req, res) => {
   const job = jobs.get(req.params.jobId);
@@ -399,10 +405,8 @@ app.get('/api/job/:jobId', (req, res) => {
   });
 });
 
-/**
- * DELETE /api/job/:jobId — Delete a single job and its files.
- */
-app.delete('/api/job/:jobId', (req, res) => {
+
+app.delete('/api/job/:jobId', async (req, res) => {
   const { jobId } = req.params;
   console.log(`[purge] Neural Discovery Request: ${jobId}`);
 
@@ -436,12 +440,12 @@ app.delete('/api/job/:jobId', (req, res) => {
   }
 
   try {
-    // Nuclear Cleanup Fallback (v2.2)
+    // Nuclear Cleanup Fallback (v2.22 logic with retries for Windows locks)
     if (folderExists) {
-      fs.rmSync(jobDir, { recursive: true, force: true });
+      await fs.promises.rm(jobDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
     }
     if (zipExists) {
-      fs.rmSync(zipPath, { force: true });
+      await fs.promises.rm(zipPath, { force: true, maxRetries: 5, retryDelay: 300 });
     }
 
     // Remove from memory if it exists
@@ -456,30 +460,6 @@ app.delete('/api/job/:jobId', (req, res) => {
   }
 });
 
-/**
- * GET /api/download/:jobId — Download the physical ZIP archive.
- */
-app.get('/api/download/:jobId', (req, res) => {
-  const { jobId } = req.params;
-  const job = jobs.get(jobId);
-  const zipPath = path.join(CLONES_DIR, `${jobId}.zip`);
-
-  if (!fs.existsSync(zipPath)) {
-    return res.status(404).json({ error: 'ZIP archive not found for this job ID' });
-  }
-
-  // Absolute ZIP Delivery Handshake (v3.1)
-  const fileName = (job && job.url) ? 
-    `${new URL(job.url).hostname}_${jobId}.zip`.replace(/[^a-z0-9.]/gi, '_') : 
-    `${jobId}.zip`;
-
-  res.setHeader('Content-Type', 'application/zip');
-  res.download(zipPath, fileName, (err) => {
-    if (err && !res.headersSent) {
-      res.status(500).json({ error: 'Failed to stream ZIP: ' + err.message });
-    }
-  });
-});
 
 // Fallback to index.html for SPA-like routing
 app.get('*', (req, res) => {

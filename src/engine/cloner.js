@@ -6,6 +6,7 @@
 import puppeteer from 'puppeteer';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { EventEmitter } from 'events';
 import { NetworkInterceptor } from './network-interceptor.js';
 import { DOMSerializer } from './dom-serializer.js';
@@ -55,28 +56,40 @@ export class SiteCloner extends EventEmitter {
     const maxPages = this.options.maxPages || (isFullClone ? 20 : 1);
     
     this.emit('progress', { phase: 'init', message: `Initializing V8 Absolute Power Engine (Mode: ${isFullClone ? 'Full Site' : 'Single Page'})...`, percent: 0 });
+    this.outputDir = outputDir;
+    this.jobId = jobId;
 
     // Ensure output dir exists
-    fs.mkdirSync(outputDir, { recursive: true });
+    fs.mkdirSync(this.outputDir, { recursive: true });
 
-    // Launch Puppeteer
+    // Launch Puppeteer with Absolute Phase Resilience (v2.17)
+    // Moving userDataDir to System Temp to prevent EBUSY locks and node --watch interference
+    const userDataDir = path.join(os.tmpdir(), `sitecloner_user_data_${this.jobId}`);
+    fs.mkdirSync(userDataDir, { recursive: true });
+
     const browser = await puppeteer.launch({
-      headless: 'new',
+      headless: true,
+      userDataDir,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-web-security',
         '--disable-features=IsolateOrigins,site-per-process',
         '--allow-running-insecure-content',
+        '--disable-gpu',
+        '--disable-dev-shm-usage',
+        '--proxy-server="direct://"',
+        '--proxy-bypass-list=*',
       ],
+      timeout: 60000, // Explicit launch timeout
     });
 
     try {
       const queue = [url];
       const visited = new Set();
       const results = [];
-      const interceptor = new NetworkInterceptor(outputDir);
-      const packager = new Packager(outputDir);
+      const interceptor = new NetworkInterceptor(this.outputDir);
+      const packager = new Packager(this.outputDir);
       const aiFixer = new AIFixer({
         apiKey: process.env.GEMINI_API_KEY,
         model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
@@ -93,11 +106,16 @@ export class SiteCloner extends EventEmitter {
         pagesCloned++;
         this.emit('progress', { 
           phase: 'navigate', 
-          message: `[${pagesCloned}/${maxPages}] Primary Neural Link: ${firstUrl}`, 
+          message: `[1/${maxPages}] Primary Neural Link: ${firstUrl}`, 
           percent: 5 
         });
-        const firstResult = await this.capturePage(firstUrl, browser, interceptor, packager, true, aiFixer, jobId);
+        const firstResult = await this.capturePage(firstUrl, browser, interceptor, packager, true, aiFixer);
         results.push(firstResult);
+        
+        // Aggregate AI statistics for first page
+        if (firstResult && firstResult.aiResult && firstResult.aiResult.appliedPatches) {
+          this.totalAiPatches = (this.totalAiPatches || 0) + firstResult.aiResult.appliedPatches;
+        }
 
         if (isFullClone) {
           const links = this.discoverInternalLinks(firstResult.html, url);
@@ -124,7 +142,7 @@ export class SiteCloner extends EventEmitter {
             percent: Math.min(90, (pIndex / maxPages) * 100) 
           });
 
-          const pageResult = await this.capturePage(currentUrl, browser, interceptor, packager, false, aiFixer, jobId);
+          const pageResult = await this.capturePage(currentUrl, browser, interceptor, packager, false, aiFixer);
           
           if (isFullClone && pagesCloned < maxPages) {
             const internalLinks = this.discoverInternalLinks(pageResult.html, url);
@@ -138,7 +156,15 @@ export class SiteCloner extends EventEmitter {
         });
 
         const batchResults = await Promise.all(batchPromises);
-        results.push(...batchResults.filter(r => r !== null));
+        const validResults = batchResults.filter(r => r !== null);
+        results.push(...validResults);
+
+        // Aggregate AI statistics (v2.18)
+        validResults.forEach(r => {
+          if (r.aiResult && r.aiResult.appliedPatches) {
+            this.totalAiPatches = (this.totalAiPatches || 0) + r.aiResult.appliedPatches;
+          }
+        });
 
         // Neural Breathing Space (v2.1)
         if (queue.length > 0 && pagesCloned < maxPages) {
@@ -150,7 +176,7 @@ export class SiteCloner extends EventEmitter {
       this.emit('progress', { phase: 'package', message: 'Finalizing V8 absolute pack...', percent: 95 });
 
       // Create ZIP
-      const zipPath = outputDir + '.zip';
+      const zipPath = this.outputDir + '.zip';
       const zipInfo = await packager.createZip(zipPath);
 
       const assetStats = interceptor.getStats();
@@ -158,13 +184,16 @@ export class SiteCloner extends EventEmitter {
         success: true,
         url,
         pagesCloned,
-        outputDir,
+        outputDir: this.outputDir,
         zipPath,
         zipSize: zipInfo.size,
         duration: Date.now() - startTime,
         stats: {
           assets: assetStats,
           pages: results.length,
+          ai: {
+            appliedPatches: this.totalAiPatches || 0
+          }
         },
       };
 
@@ -179,14 +208,17 @@ export class SiteCloner extends EventEmitter {
 
     } finally {
       if (browser) {
-        // Non-blocking browser teardown to prevent completion hangups (v2.11)
-        (async () => {
-          try {
-            await browser.close();
-          } catch (e) {
-            console.error(`[SYSTEM] Browser teardown warning: ${e.message}`);
+        // Absolute Teardown Lock (v2.17): Ensure sequential cleanup for system stability
+        try {
+          await browser.close();
+          // Safety Buffer: Allow OS handles to release before deletion (v2.17)
+          await delay(1000);
+          if (fs.existsSync(userDataDir)) {
+            fs.rmSync(userDataDir, { recursive: true, force: true });
           }
-        })();
+        } catch (e) {
+          console.error(`[SYSTEM] Neural Teardown Fault: ${e.message}`);
+        }
       }
     }
   }
@@ -194,7 +226,7 @@ export class SiteCloner extends EventEmitter {
   /**
    * Capture a single page and its assets.
    */
-  async capturePage(url, browser, interceptor, packager, isInitial = false, aiFixer = null, jobId = null) {
+  async capturePage(url, browser, interceptor, packager, isInitial = false, aiFixer = null) {
     const page = await safeNewPage(browser);
     try {
       // Set viewport
@@ -248,9 +280,39 @@ export class SiteCloner extends EventEmitter {
         }
       });
 
-      // Wait for stability
+      // Wait for stability and SPA readiness (v2.19 — Absolute Hydration Protocol)
       await this.waitForStability(page);
       await this.waitForFonts(page);
+      
+      // V2.19 Deep SPA Hydration Wait — Handles React, Vue, Vite, Next.js SPAs
+      // The key insight: we wait not just for root to have children, but for the page
+      // to have meaningful visual content (elements with actual text nodes or images)
+      await page.evaluate(async () => {
+        const hasContent = () => {
+          const body = document.body;
+          if (!body) return false;
+          // Count elements that likely have visible content
+          const headings = body.querySelectorAll('h1,h2,h3,h4,h5,h6,p,span,a,button,img,section,article,main,nav');
+          return headings.length > 3; // At least 4 meaningful elements rendered
+        };
+        
+        if (hasContent()) return; // Already rendered — no need to wait
+        
+        // Wait up to 8s for content to appear
+        await new Promise(resolve => {
+          let checks = 0;
+          const interval = setInterval(() => {
+            checks++;
+            if (hasContent() || checks > 32) { // 32 * 250ms = 8s max
+              clearInterval(interval);
+              resolve();
+            }
+          }, 250);
+        });
+      });
+      
+      // Final buffer to allow animations/transitions to complete
+      await new Promise(resolve => setTimeout(resolve, 1500));
 
       // V10: Guardian Bypass — Surgical Removal of CAPTCHA/Verification Blocks
       await page.evaluate(() => {
@@ -284,6 +346,22 @@ export class SiteCloner extends EventEmitter {
       const urlRewriter = new URLRewriter(assetMap, url);
       let rewrittenHTML = urlRewriter.rewriteHTML(html);
 
+      // V2.19: Strip crossorigin attributes — they cause CORS failures when served locally.
+      // Vite/React apps add crossorigin="" to all module scripts which breaks preview loading.
+      rewrittenHTML = rewrittenHTML.replace(/\s+crossorigin(?:=["'][^"']*["']|)?/gi, '');
+      // Also strip integrity attributes which prevent tampered/local files from loading
+      rewrittenHTML = rewrittenHTML.replace(/\s+integrity=["'][^"']*["']/gi, '');
+
+      // V2.20: SPA Static Preservation — Remove framework module scripts that destroy pre-rendered DOM.
+      // When we clone a React/Vue/Vite SPA, the DOM serializer captures the fully-rendered HTML.
+      // The bundled JS modules (type="module") would re-mount the framework, see the wrong URL path
+      // (e.g. /api/preview/jobId/...), and render a blank page / 404 — destroying our perfect HTML.
+      // Solution: Strip these module scripts since the static DOM is already complete.
+      // We also strip modulepreload links since those are only useful for module scripts.
+      rewrittenHTML = rewrittenHTML.replace(/<script\s+[^>]*type\s*=\s*["']module["'][^>]*>[\s\S]*?<\/script>/gi, '<!-- SiteCloner: Module script removed for static fidelity -->');
+      rewrittenHTML = rewrittenHTML.replace(/<link\s+[^>]*rel\s*=\s*["']modulepreload["'][^>]*>/gi, '<!-- SiteCloner: Modulepreload removed -->');
+
+
       // V7: Inject Holographic Styles
       rewrittenHTML = packager.injectHolographicStyles(rewrittenHTML, computedStyles, cssExtractor.customProperties);
 
@@ -296,6 +374,33 @@ export class SiteCloner extends EventEmitter {
       }
 
       // Write page
+      const hydrationShield = `
+      <script id="v8-hydration-shield">
+        // V8: Next.js Hydration Recovery & Error Suppression
+        (function() {
+          const originalError = console.error;
+          console.error = function(...args) {
+            if (args[0] && typeof args[0] === 'string' && (
+              args[0].includes('Hydration failed') || 
+              args[0].includes('Text content did not match') ||
+              args[0].includes('Application error')
+            )) {
+              originalError.apply(console, ['[V8 Shield] Suppressed Hydration Error:', ...args]);
+              return;
+            }
+            originalError.apply(console, args);
+          };
+          window.addEventListener('error', function(e) {
+            if (e.message && e.message.includes('Next.js')) {
+              e.stopImmediatePropagation();
+              e.preventDefault();
+              console.warn('[V8 Shield] Blocked Next.js Runtime Crash');
+            }
+          }, true);
+        })();
+      </script>
+      `;
+      rewrittenHTML = rewrittenHTML.replace('</head>', `${hydrationShield}</head>`);
       packager.writeHTML(rewrittenHTML, filename);
       
       // If it's the initial page, write the animations and run.bat
@@ -310,19 +415,33 @@ export class SiteCloner extends EventEmitter {
       }
 
       // V11: Neural Overdrive — High-Fidelity AI Healing Pass
-      if (this.options.aiFinish && aiFixer && jobId) {
-        await aiFixer.finish({
-          url,
-          outputDir: this.outputDir || path.dirname(this.outputDir || path.join(process.cwd(), 'clones', jobId)),
-          jobId,
-          viewport: this.options.viewport,
-          userAgent: this.options.userAgent,
-          browser,
-          targetFile: filename
-        });
+      let aiResult = null;
+      if (this.options.aiFinish && aiFixer && this.jobId) {
+        try {
+          aiResult = await aiFixer.finish({
+            url,
+            outputDir: this.outputDir,
+            jobId: this.jobId,
+            viewport: this.options.viewport,
+            userAgent: this.options.userAgent,
+            browser,
+            targetFile: filename
+          });
+          
+          if (aiResult && aiResult.appliedPatches) {
+              this.emit('progress', { phase: 'ai', patches: aiResult.appliedPatches });
+          }
+        } catch (err) {
+          console.error(`[AI Engine Failure] Neural bypass triggered for ${filename}:`, err);
+          this.emit('progress', { 
+            phase: 'ai', 
+            message: `Neural Bypass Activated: Critical fault in ${filename}. Continuing with fallback fidelity...`, 
+            percent: -1 
+          });
+        }
       }
 
-      return { url, filename, html: rewrittenHTML, metaInfo };
+      return { url, filename, html: rewrittenHTML, metaInfo, aiResult };
     } finally {
       await page.close();
     }
@@ -346,7 +465,11 @@ export class SiteCloner extends EventEmitter {
         if (absoluteUrl.origin === baseOrigin) {
           // Remove hash and trailing slash for normalization
           absoluteUrl.hash = '';
-          const cleanUrl = absoluteUrl.href.replace(/\/$/, '');
+          let cleanUrl = absoluteUrl.href;
+          // V2.21: Prevent redundant crawling of index files which map to the identical local file
+          // and overwrite the hydrated root page with an empty route.
+          cleanUrl = cleanUrl.replace(/\/(?:index\.html|index\.htm|index\.php)$/i, '/');
+          cleanUrl = cleanUrl.replace(/\/$/, '');
           internalLinks.add(cleanUrl);
         }
       } catch (e) {}
@@ -435,12 +558,16 @@ export class SiteCloner extends EventEmitter {
       await new Promise((resolve) => {
         let totalHeight = 0;
         const distance = 100;
+        const maxScrollAttempts = 100; // Cap scrolling to prevent infinite loops (v2.13)
+        let attempts = 0;
+
         const timer = setInterval(() => {
           const scrollHeight = document.body.scrollHeight;
           window.scrollBy(0, distance);
           totalHeight += distance;
+          attempts++;
 
-          if (totalHeight >= scrollHeight) {
+          if (totalHeight >= scrollHeight || attempts >= maxScrollAttempts) {
             clearInterval(timer);
             resolve();
           }
@@ -450,7 +577,7 @@ export class SiteCloner extends EventEmitter {
     // Scroll back to the top for serialization
     await page.evaluate(() => window.scrollTo(0, 0));
     // Final wait for network requests and late animations
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    await new Promise(resolve => setTimeout(resolve, 2000));
   }
 
   /**

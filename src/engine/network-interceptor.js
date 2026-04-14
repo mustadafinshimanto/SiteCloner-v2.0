@@ -20,6 +20,7 @@ export class NetworkInterceptor {
       fonts: ['font/woff', 'font/woff2', 'font/ttf', 'font/otf', 'application/font-woff', 'application/font-woff2', 'application/x-font-woff', 'application/x-font-ttf', 'application/x-font-opentype', 'application/vnd.ms-fontobject'],
       videos: ['video/mp4', 'video/webm', 'video/ogg'],
       audio: ['audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm'],
+      data: ['application/json', 'text/x-component', 'application/x-ndjson', 'application/octet-stream'],
     };
     this.knownPaths = new Set();
     this.savingPaths = new Set(); // Multi-page concurrency lock (v2.1)

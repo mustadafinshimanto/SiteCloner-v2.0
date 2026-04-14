@@ -146,6 +146,13 @@
       const { jobId } = await response.json();
       currentJobId = jobId;
 
+      // V11: Immediate AI Readiness Glow
+      if (options.aiFinish) {
+        aiStatCard.classList.remove('hidden');
+        aiStatCard.classList.add('active-ai');
+        statsGrid.classList.remove('hidden');
+      }
+
       // Add to history
       addToHistory({ id: jobId, url, status: 'running', createdAt: new Date().toISOString() });
 
@@ -232,10 +239,11 @@
         statAI.textContent = currentCount + data.patches;
       }
     } else if (data.phase !== 'ai' && aiStatCard.classList.contains('active-ai')) {
-      // Clear AI glow if we leave AI phase (e.g. to download or done)
-      // but only if we weren't just in the middle of a continuous AI pass
-      if (data.phase !== 'init' && data.phase !== 'download') {
-         aiStatCard.classList.remove('active-ai');
+      // Keep active if we are in a phase that still precedes the final AI pass
+      // or if it's explicitly 'active' via server signal
+      const persistentPhases = ['init', 'capture', 'download'];
+      if (!persistentPhases.includes(data.phase)) {
+         // aiStatCard.classList.remove('active-ai'); // We'll keep it active for the whole job if enabled
       }
     }
 

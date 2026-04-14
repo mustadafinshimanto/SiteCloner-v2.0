@@ -218,8 +218,8 @@ export class URLRewriter {
       this.rewriteCount++;
       return prefix + localPath + suffix;
     });
-    // Rewrite content attributes in meta tags (og:image, etc.)
-    result = result.replace(/(<meta\s[^>]*content\s*=\s*["'])([^"']+)(["'][^>]*>)/gi, (match, prefix, url, suffix) => {
+    // Rewrite content attributes ONLY for known URL/Image meta tags (v3.4)
+    result = result.replace(/(<meta\s[^>]*?(?:property|name)\s*=\s*["'](?:og:image|og:url|twitter:image|twitter:url|video:url)[^>]*?content\s*=\s*["'])([^"']+)(["'][^>]*>)/gi, (match, prefix, url, suffix) => {
       const absoluteUrl = this.resolveUrl(url);
       if (!absoluteUrl) return match;
       const localPath = this.findLocalPath(absoluteUrl);

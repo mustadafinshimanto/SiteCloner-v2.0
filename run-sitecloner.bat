@@ -57,11 +57,9 @@ if not defined PORT (
 echo [NETWORK] Port: %PORT%
 echo [NETWORK] Local: http://localhost:%PORT%
 echo.
-echo  ------------------------------------------------------------
-echo     Starting SiteCloner Server... (Press Ctrl+C to stop) 
-echo  ------------------------------------------------------------
+echo [V8] Hot-Reloading Active: System will auto-refresh on code changes.
 echo.
 
-npm start
+npm run dev
 
 endlocal
